@@ -5448,13 +5448,23 @@ const TITLE_DEFINITIONS = [
   {id:'mo_plat',   icon:'💠', name:'月プラチナバッジ', desc:'1ヶ月でプラチナ到達',         cond: p => _maxMonthlyEarned(p) >= 1000, progress: p => ({current:_maxMonthlyEarned(p), target:1000, unit:'pt(月)'})},
   {id:'mo_dia',    icon:'💎', name:'月ダイヤバッジ',  desc:'1ヶ月でダイヤモンド到達',     cond: p => _maxMonthlyEarned(p) >= 2800, progress: p => ({current:_maxMonthlyEarned(p), target:2800, unit:'pt(月)'})},
   {id:'mo_master', icon:'👑', name:'月マスターバッジ', desc:'1ヶ月でマスター到達',         cond: p => _maxMonthlyEarned(p) >= 5000, progress: p => ({current:_maxMonthlyEarned(p), target:5000, unit:'pt(月)'})},
-  // ── カテゴリ別 ──
-  {id:'cat_clean', icon:'🧹', name:'清掃マスター',    desc:'「清掃」カテゴリのタスクを完了', cond: p => (p.completedCats||[]).includes('清掃'), progress: p => ({current:(p.completedCats||[]).includes('清掃')?1:0, target:1, unit:'対応'})},
-  {id:'cat_stock', icon:'📥', name:'補充隊長',        desc:'「補充」カテゴリのタスクを完了', cond: p => (p.completedCats||[]).includes('補充'), progress: p => ({current:(p.completedCats||[]).includes('補充')?1:0, target:1, unit:'対応'})},
-  {id:'cat_check', icon:'🔍', name:'確認の鬼',        desc:'「確認」カテゴリのタスクを完了', cond: p => (p.completedCats||[]).includes('確認'), progress: p => ({current:(p.completedCats||[]).includes('確認')?1:0, target:1, unit:'対応'})},
-  {id:'cat_fix',   icon:'🔧', name:'修正名人',        desc:'「修正」カテゴリのタスクを完了', cond: p => (p.completedCats||[]).includes('修正'), progress: p => ({current:(p.completedCats||[]).includes('修正')?1:0, target:1, unit:'対応'})},
-  {id:'cat_make',  icon:'🎨', name:'作成の匠',        desc:'「作成」カテゴリのタスクを完了', cond: p => (p.completedCats||[]).includes('作成'), progress: p => ({current:(p.completedCats||[]).includes('作成')?1:0, target:1, unit:'対応'})},
-  {id:'allcat',    icon:'🌈', name:'万能型',          desc:'すべてのカテゴリのタスクを完了', cond: p => (p.completedCats||[]).length >= 7, progress: p => ({current:(p.completedCats||[]).length, target:7, unit:'カテゴリ'})}
+  // ── カテゴリ別（10回 / 50回 / 200回 の3段階） ──
+  {id:'cat_clean10',  icon:'🧹', name:'清掃見習い',      desc:'「清掃」を10回完了',   cond: p => ((p.catCounts||{})['清掃']||0) >= 10,  progress: p => ({current:((p.catCounts||{})['清掃']||0), target:10,  unit:'回'})},
+  {id:'cat_clean',    icon:'🧼', name:'清掃マスター',    desc:'「清掃」を50回完了',   cond: p => ((p.catCounts||{})['清掃']||0) >= 50,  progress: p => ({current:((p.catCounts||{})['清掃']||0), target:50,  unit:'回'})},
+  {id:'cat_clean200', icon:'✨', name:'清掃の達人',      desc:'「清掃」を200回完了',  cond: p => ((p.catCounts||{})['清掃']||0) >= 200, progress: p => ({current:((p.catCounts||{})['清掃']||0), target:200, unit:'回'})},
+  {id:'cat_stock10',  icon:'📥', name:'補充見習い',      desc:'「補充」を10回完了',   cond: p => ((p.catCounts||{})['補充']||0) >= 10,  progress: p => ({current:((p.catCounts||{})['補充']||0), target:10,  unit:'回'})},
+  {id:'cat_stock',    icon:'🚚', name:'補充隊長',        desc:'「補充」を50回完了',   cond: p => ((p.catCounts||{})['補充']||0) >= 50,  progress: p => ({current:((p.catCounts||{})['補充']||0), target:50,  unit:'回'})},
+  {id:'cat_stock200', icon:'🏭', name:'補充の達人',      desc:'「補充」を200回完了',  cond: p => ((p.catCounts||{})['補充']||0) >= 200, progress: p => ({current:((p.catCounts||{})['補充']||0), target:200, unit:'回'})},
+  {id:'cat_check10',  icon:'🔍', name:'確認の番人',      desc:'「確認」を10回完了',   cond: p => ((p.catCounts||{})['確認']||0) >= 10,  progress: p => ({current:((p.catCounts||{})['確認']||0), target:10,  unit:'回'})},
+  {id:'cat_check',    icon:'🦉', name:'確認の鬼',        desc:'「確認」を50回完了',   cond: p => ((p.catCounts||{})['確認']||0) >= 50,  progress: p => ({current:((p.catCounts||{})['確認']||0), target:50,  unit:'回'})},
+  {id:'cat_check200', icon:'👁', name:'確認の神',        desc:'「確認」を200回完了',  cond: p => ((p.catCounts||{})['確認']||0) >= 200, progress: p => ({current:((p.catCounts||{})['確認']||0), target:200, unit:'回'})},
+  {id:'cat_fix10',    icon:'🔧', name:'修正初心者',      desc:'「修正」を10回完了',   cond: p => ((p.catCounts||{})['修正']||0) >= 10,  progress: p => ({current:((p.catCounts||{})['修正']||0), target:10,  unit:'回'})},
+  {id:'cat_fix',      icon:'🛠', name:'修正名人',        desc:'「修正」を50回完了',   cond: p => ((p.catCounts||{})['修正']||0) >= 50,  progress: p => ({current:((p.catCounts||{})['修正']||0), target:50,  unit:'回'})},
+  {id:'cat_fix200',   icon:'⚙️', name:'修正の匠',        desc:'「修正」を200回完了',  cond: p => ((p.catCounts||{})['修正']||0) >= 200, progress: p => ({current:((p.catCounts||{})['修正']||0), target:200, unit:'回'})},
+  {id:'cat_make10',   icon:'🎨', name:'作成見習い',      desc:'「作成」を10回完了',   cond: p => ((p.catCounts||{})['作成']||0) >= 10,  progress: p => ({current:((p.catCounts||{})['作成']||0), target:10,  unit:'回'})},
+  {id:'cat_make',     icon:'🖌', name:'作成の匠',        desc:'「作成」を50回完了',   cond: p => ((p.catCounts||{})['作成']||0) >= 50,  progress: p => ({current:((p.catCounts||{})['作成']||0), target:50,  unit:'回'})},
+  {id:'cat_make200',  icon:'🌟', name:'作成の巨匠',      desc:'「作成」を200回完了',  cond: p => ((p.catCounts||{})['作成']||0) >= 200, progress: p => ({current:((p.catCounts||{})['作成']||0), target:200, unit:'回'})},
+  {id:'allcat',       icon:'🌈', name:'万能型',          desc:'すべてのカテゴリを完了', cond: p => (p.completedCats||[]).length >= 5, progress: p => ({current:(p.completedCats||[]).length, target:5, unit:'カテゴリ'})}
 ];
 
 const GACHA_ITEMS = [
@@ -5519,7 +5529,7 @@ function getOrCreateProfile(name){
   if(!name) return null;
   if(!state.gameProfiles) state.gameProfiles = {};
   if(!state.gameProfiles[name]){
-    state.gameProfiles[name] = {points:0, totalEarned:0, totalCompleted:0, titles:[], items:[], completedCats:[], monthlyEarned:0, currentMonth:null, rankHistory:[], companions:[], unseenCompanions:[], taskStreak:0, taskStreakBest:0, viewedItems:[], viewedCompanions:[], journeySeason:1, journeyBaseEarned:0, seasonHistory:[], stamps: STARTER_STAMP_IDS.map(id => ({stampId:id, gotAt:new Date().toISOString()})), foodInventory:[]};
+    state.gameProfiles[name] = {points:0, totalEarned:0, totalCompleted:0, titles:[], items:[], completedCats:[], catCounts:{}, monthlyEarned:0, currentMonth:null, rankHistory:[], companions:[], unseenCompanions:[], taskStreak:0, taskStreakBest:0, viewedItems:[], viewedCompanions:[], journeySeason:1, journeyBaseEarned:0, seasonHistory:[], stamps: STARTER_STAMP_IDS.map(id => ({stampId:id, gotAt:new Date().toISOString()})), foodInventory:[]};
   }
   // 既存プロフィールにも新フィールドを補完
   const p = state.gameProfiles[name];
@@ -6018,7 +6028,11 @@ function awardPointsForTask(staffName, t){
     seasonCompleted = {season: completedSeason, nextSeason: p.journeySeason};
   }
   if(!Array.isArray(p.completedCats)) p.completedCats = [];
-  (t.cats || []).forEach(c => { if(!p.completedCats.includes(c)) p.completedCats.push(c); });
+  if(!p.catCounts || typeof p.catCounts !== 'object') p.catCounts = {};
+  (t.cats || []).forEach(c => {
+    if(!p.completedCats.includes(c)) p.completedCats.push(c);
+    p.catCounts[c] = (p.catCounts[c] || 0) + 1;
+  });
   // 称号判定（組込み + カスタム）
   const newTitles = [];
   getAllTitles().forEach(def => {
