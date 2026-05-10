@@ -1676,6 +1676,8 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* フッター */
 #footer{padding:14px;text-align:center;font-size:11px;color:var(--gray);background:#fff;border-top:1px solid var(--border)}
 #footer .save-info{margin-top:4px}
+#footer .version-info{margin-top:4px;font-size:10px;color:#9ca3af;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+#footer .version-info code{background:#f3f4f6;padding:1px 5px;border-radius:3px}
 
 @media(max-width:540px){
   .hour-label{font-size:12px}
@@ -1975,6 +1977,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="footer">
     <div>0時〜23時のタイムライン形式 — 各時間枠に「+」でタスク追加</div>
     <div class="save-info" id="save-info">—</div>
+    <div class="version-info" id="version-info" title="ビルド情報">v1.0 · build <span id="version-hash">—</span></div>
   </div>
 </div>
 
@@ -2628,6 +2631,8 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
+const APP_VERSION = '1.0';
+const APP_BUILD = '06e9c5b'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
   pointsTimeBonus: 2,
@@ -10636,8 +10641,16 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
+/* バージョン表示を初期化 */
+function initVersionInfo(){
+  const el = document.getElementById('version-info');
+  const hashEl = document.getElementById('version-hash');
+  if(hashEl) hashEl.textContent = APP_BUILD;
+  if(el) el.firstChild.textContent = `v${APP_VERSION} · build `;
+}
 /* ========== 起動 ========== */
 async function start(){
+  initVersionInfo();
   // 0) 管理者モード状態の復元（タブ閉じるまで保持）
   if(sessionStorage.getItem('ws_admin_active') === '1'){
     isAdmin = true;
