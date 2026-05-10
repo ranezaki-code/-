@@ -3208,6 +3208,9 @@ function saveTask(){
     allowCarry, allowRetire, allowSkip,
     checklist
   };
+  // ヘルパー: 各タスク/テンプレートに独立したチェックリストコピーを渡す（参照共有を防ぐ）
+  const cloneChecklist = () => checklist.map(c => ({...c}));
+  const baseFieldsForNew = () => Object.assign({}, baseFields, {checklist: cloneChecklist()});
 
   if(editingTaskId){
     const oldKey = editingDateKey;
@@ -3269,7 +3272,7 @@ function saveTask(){
           .map(x => x.hour));
         wantedHours.forEach(h => {
           if(!existingHours.has(h)){
-            state.tasks[targetKey].push(Object.assign({}, baseFields, {
+            state.tasks[targetKey].push(Object.assign({}, baseFieldsForNew(), {
               id: 't_' + Date.now() + '_' + h + '_' + Math.floor(Math.random()*1000),
               done: false, carryOvers: [],
               order: nextOrderInHour(targetKey, h),
@@ -3318,7 +3321,7 @@ function saveTask(){
           .map(rt => rt.hour));
         wantedHours.forEach(h => {
           if(!existingHours.has(h)){
-            state.recurringTasks.push(Object.assign({}, baseFields, {
+            state.recurringTasks.push(Object.assign({}, baseFieldsForNew(), {
               id: 'rt_' + Date.now() + '_' + h + '_' + Math.floor(Math.random()*1000),
               createdAt: new Date().toISOString(),
               recurringDows: selectedDows.slice(),
@@ -3360,7 +3363,7 @@ function saveTask(){
       // 新規：繰り返しテンプレート登録 → 該当する日付に展開
       if(!Array.isArray(state.recurringTasks)) state.recurringTasks = [];
       hoursToCreate.forEach((h, i) => {
-        const rt = Object.assign({}, baseFields, {
+        const rt = Object.assign({}, baseFieldsForNew(), {
           id: 'rt_' + Date.now() + '_' + i + '_' + Math.floor(Math.random()*1000),
           createdAt: new Date().toISOString(),
           recurringDows: selectedDows.slice(),
@@ -3373,7 +3376,7 @@ function saveTask(){
       // 新規：単発タスク
       if(!state.tasks[newDateKey]) state.tasks[newDateKey] = [];
       hoursToCreate.forEach((h, i) => {
-        state.tasks[newDateKey].push(Object.assign({}, baseFields, {
+        state.tasks[newDateKey].push(Object.assign({}, baseFieldsForNew(), {
           id: 't_' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000),
           done: false,
           carryOvers: [],
@@ -5848,6 +5851,8 @@ function ensureStoreState(){
 }
 function getFoodById(id){ return FOODS.find(f => f.id === id); }
 /* マスコットに食べ物をあげる：staffName の食料庫から1つ消費 → 共有の進化pt加算 */
+// グローバルな給餌ロック：同じ食料アイテムが多重呼び出しされても1回しか実行しない
+const _feedingLocks = new Set();
 function feedMascot(staffName, foodId, ev){
   if(!staffName){ alert('従業員を選択してください'); return; }
   const p = state.gameProfiles?.[staffName];
@@ -5855,9 +5860,13 @@ function feedMascot(staffName, foodId, ev){
   if(!Array.isArray(p.foodInventory)) p.foodInventory = [];
   const idx = p.foodInventory.findIndex(it => it.foodId === foodId);
   if(idx < 0){ alert('そのごはんを持っていません'); return; }
+  const targetItem = p.foodInventory[idx];
+  // ロック：同じ食料アイテム(参照)が処理中なら早期リターン
+  if(_feedingLocks.has(targetItem)) return;
+  _feedingLocks.add(targetItem);
   const food = getFoodById(foodId);
-  if(!food) return;
-  // クリックしたボタンを即時無効化（同じ要素への二度押しを防ぐ）
+  if(!food){ _feedingLocks.delete(targetItem); return; }
+  // クリックしたボタンを即時無効化（多層防御）
   if(ev && ev.currentTarget){
     ev.currentTarget.disabled = true;
     ev.currentTarget.style.pointerEvents = 'none';
@@ -5888,10 +5897,11 @@ function feedMascot(staffName, foodId, ev){
       startRect = ev.currentTarget.getBoundingClientRect();
     }
     const onImpact = () => {
-      // 着弾 = 二重実行を防ぐため再検証してから splice
-      const i2 = p.foodInventory.findIndex(it => it.foodId === foodId);
-      if(i2 < 0) return;
+      // 着弾 = 二重実行を防ぐため targetItem そのものが今も在庫にあるかで判定
+      const i2 = p.foodInventory.indexOf(targetItem);
+      if(i2 < 0){ _feedingLocks.delete(targetItem); return; }
       p.foodInventory.splice(i2, 1);
+      _feedingLocks.delete(targetItem);
       const s = ensureStoreState();
       const beforeStage = getMascotStage(s.teamTotalEarned);
       s.teamTotalEarned += food.evoPt;
@@ -7912,6 +7922,16 @@ function startRequest(id, ev){
   refreshCurrentView();
 }
 
+function cancelRequestStart(id, ev){
+  if(ev) ev.stopPropagation();
+  const r = (state.requestTasks || []).find(x => x.id === id);
+  if(!r || !r.startedAt) return;
+  if(!confirm('開始を取り消しますか？\n（経過時間は破棄されます）')) return;
+  delete r.startedAt;
+  saveState();
+  refreshCurrentView();
+}
+
 function reopenRequest(id, ev){
   if(ev) ev.stopPropagation();
   const r = (state.requestTasks || []).find(x => x.id === id);
@@ -8023,7 +8043,7 @@ function renderRequestCard(r){
   } else if(r.startedAt){
     const elapsed = Math.floor((Date.now() - new Date(r.startedAt).getTime()) / 1000);
     actionsHtml = `
-      <span class="task-progress-badge" data-progress-task="${r.id}" data-started="${r.startedAt}">進行中 ${fmtTimerTime(elapsed)}</span>
+      <span class="task-progress-badge" data-progress-task="${r.id}" data-started="${r.startedAt}" onclick="cancelRequestStart('${r.id}', event)" title="クリックで開始を取り消し">進行中 ${fmtTimerTime(elapsed)}</span>
       <button class="task-start-btn" style="background:linear-gradient(135deg,#10b981,#059669)" onclick="completeRequest('${r.id}', event)">✓ 完了</button>
     `;
   } else {
