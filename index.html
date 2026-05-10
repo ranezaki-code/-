@@ -1121,6 +1121,9 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .checklist-edit-item .num{font-size:11px;color:var(--gray);width:24px;text-align:right;flex-shrink:0}
 .checklist-edit-item button.del{background:transparent;color:var(--gray);padding:4px 8px;font-size:14px;border-radius:4px}
 .checklist-edit-item button.del:hover{background:var(--red-lt);color:var(--red)}
+.checklist-edit-item button.mv{background:transparent;color:var(--gray);padding:2px 6px;font-size:11px;border-radius:4px;flex-shrink:0}
+.checklist-edit-item button.mv:hover:not(:disabled){background:var(--accent-lt);color:var(--accent)}
+.checklist-edit-item button.mv:disabled{opacity:.3;cursor:not-allowed}
 .checklist-edit-item.is-section{margin-top:6px;padding:4px 6px;background:#eef2ff;border-radius:6px}
 .checklist-edit-item.is-section .sec-label{font-size:10px;font-weight:800;color:#4f46e5;background:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0}
 .checklist-edit-item.is-section input[type=text]{font-weight:700;color:#3730a3;background:#fff}
@@ -2640,7 +2643,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '1.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '3d75082'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -3049,14 +3052,19 @@ function renderChecklistEditor(){
     container.innerHTML = '<div style="font-size:11px;color:var(--gray);font-style:italic;padding:4px 0">項目なし。「＋ 項目を追加」または「＋ 区分」で登録してください。</div>';
     return;
   }
+  const last = editingChecklist.length - 1;
   // 通常項目は区分内で 1, 2, 3 ... と連番で振る
   let itemNo = 0;
   container.innerHTML = editingChecklist.map((item, i) => {
+    const upDis = i === 0 ? 'disabled' : '';
+    const dnDis = i === last ? 'disabled' : '';
+    const moveBtns = `<button class="mv" onclick="moveChecklistItemEditor(${i},-1)" title="上へ" ${upDis}>▲</button><button class="mv" onclick="moveChecklistItemEditor(${i},1)" title="下へ" ${dnDis}>▼</button>`;
     if(item.type === 'section'){
       itemNo = 0;
       return `<div class="checklist-edit-item is-section">
         <span class="sec-label">■ 区分</span>
         <input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：開店前 / 補充 / 確認">
+        ${moveBtns}
         <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
       </div>`;
     }
@@ -3064,9 +3072,19 @@ function renderChecklistEditor(){
     return `<div class="checklist-edit-item">
       <span class="num">${itemNo}.</span>
       <input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：レジ点検">
+      ${moveBtns}
       <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
     </div>`;
   }).join('');
+}
+
+function moveChecklistItemEditor(idx, dir){
+  const ni = idx + dir;
+  if(ni < 0 || ni >= editingChecklist.length) return;
+  const tmp = editingChecklist[idx];
+  editingChecklist[idx] = editingChecklist[ni];
+  editingChecklist[ni] = tmp;
+  renderChecklistEditor();
 }
 
 function addChecklistItemEditor(){
