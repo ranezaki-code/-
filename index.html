@@ -9112,14 +9112,19 @@ function renderTaskList(){
   );
 
   // タスクをグループ化:
-  // - 繰り返しタスク (recurringTaskId 持ち) → テンプレート単位で1行（日付不問）
+  // - 繰り返しタスク → 同名・同担当・同曜日パターンを1行（複数テンプレートを横断して集約）
   // - 単発タスク → 同日・同名・同担当を1行
+  const recurringMap = new Map();
+  (state.recurringTasks || []).forEach(rt => recurringMap.set(rt.id, rt));
+  const dowsKeyOf = rt => Array.isArray(rt && rt.recurringDows) ? rt.recurringDows.slice().sort().join(',') : '';
   const groups = [];
   const groupMap = new Map();
   filtered.forEach(t => {
     let key, isRecur;
     if(t.recurringTaskId){
-      key = `R|${t.recurringTaskId}`;
+      const rt = recurringMap.get(t.recurringTaskId);
+      const dowsKey = dowsKeyOf(rt);
+      key = `R|${(t.text||'').trim()}|${t.tan || 'both'}|${dowsKey}`;
       isRecur = true;
     } else {
       key = `S|${t.dateKey}|${t.tan || 'both'}|${(t.text || '').trim()}`;
@@ -9127,13 +9132,14 @@ function renderTaskList(){
     }
     let g = groupMap.get(key);
     if(!g){
-      g = {key, isRecur, recurringTaskId: t.recurringTaskId || null, dateKey: t.dateKey, tan: t.tan || 'both', text: t.text || '', items: [], dateKeys: new Set(), hourSet: new Set()};
+      g = {key, isRecur, recurringTaskIds: new Set(), dateKey: t.dateKey, tan: t.tan || 'both', text: t.text || '', items: [], dateKeys: new Set(), hourSet: new Set()};
       groupMap.set(key, g);
       groups.push(g);
     }
     g.items.push(t);
     g.dateKeys.add(t.dateKey);
     g.hourSet.add(t.hour);
+    if(t.recurringTaskId) g.recurringTaskIds.add(t.recurringTaskId);
   });
   // 各グループ内を時刻順
   groups.forEach(g => g.items.sort((a,b) => (a.hour ?? 0) - (b.hour ?? 0) || (a.min ?? 0) - (b.min ?? 0)));
@@ -9177,7 +9183,8 @@ function renderTaskList(){
         // 日付列：recurring なら曜日リスト、単発なら日付
         let dateCellHtml;
         if(g.isRecur){
-          const rt = (state.recurringTasks || []).find(x => x.id === g.recurringTaskId);
+          const firstRtId = Array.from(g.recurringTaskIds)[0];
+          const rt = (state.recurringTasks || []).find(x => x.id === firstRtId);
           const dows = (rt && rt.recurringDows) || [];
           const dowMap = ['日','月','火','水','木','金','土'];
           const sortedDows = dows.slice().sort();
@@ -9200,7 +9207,7 @@ function renderTaskList(){
           <td class="tl-actions">
             <button class="btn-secondary" onclick="goToTaskDate('${g.dateKey}', '${first.id}')" title="${g.isRecur?'タイムラインで確認':'この日のタイムラインを表示'}">📋</button>
             <button class="btn-secondary" onclick="openEditModalFromList('${g.dateKey}','${first.id}')" title="編集">✏️</button>
-            <button class="btn-danger" onclick="${g.isRecur?`deleteRecurringFromList('${g.recurringTaskId}','${encodeURIComponent(g.text)}')`:`deleteTaskGroupFromList('${g.dateKey}','${encodeURIComponent(g.text)}','${g.tan}')`}" title="${g.isRecur?'繰り返し設定ごと削除':'同名タスクをまとめて削除'}">🗑</button>
+            <button class="btn-danger" onclick="${g.isRecur?`deleteRecurringGroupFromList('${Array.from(g.recurringTaskIds).join(',')}','${encodeURIComponent(g.text)}')`:`deleteTaskGroupFromList('${g.dateKey}','${encodeURIComponent(g.text)}','${g.tan}')`}" title="${g.isRecur?'繰り返し設定ごと削除':'同名タスクをまとめて削除'}">🗑</button>
           </td>
         </tr>`;
       }).join('')}
@@ -9245,15 +9252,17 @@ function deleteTaskFromList(dKey, taskId){
   saveState();
   renderTaskList();
 }
-/* 繰り返しテンプレート + 全日のインスタンスをまとめて削除 */
-function deleteRecurringFromList(rtId, encodedText){
+/* 繰り返しテンプレート + 全日のインスタンスをまとめて削除（複数テンプレート対応） */
+function deleteRecurringGroupFromList(rtIdsStr, encodedText){
+  const rtIds = (rtIdsStr || '').split(',').filter(Boolean);
   const text = decodeURIComponent(encodedText);
-  if(!confirm(`🔁 繰り返しタスク「${text}」を完全に削除しますか？\n\n・テンプレートを削除（今後の自動作成も停止）\n・既存の全インスタンス（未完了のもの）も削除\n・完了/リタイア済みは履歴として残す`)) return;
-  // テンプレート削除
-  state.recurringTasks = (state.recurringTasks || []).filter(rt => rt.id !== rtId);
-  // 各日付の未処理インスタンスを削除
+  if(!rtIds.length) return;
+  const cnt = rtIds.length;
+  if(!confirm(`🔁 繰り返しタスク「${text}」(${cnt}個のテンプレート/時刻) を完全に削除しますか？\n\n・テンプレートを削除（今後の自動作成も停止）\n・既存の全インスタンス（未完了のもの）も削除\n・完了/リタイア済みは履歴として残す`)) return;
+  const idSet = new Set(rtIds);
+  state.recurringTasks = (state.recurringTasks || []).filter(rt => !idSet.has(rt.id));
   Object.keys(state.tasks || {}).forEach(dk => {
-    state.tasks[dk] = (state.tasks[dk] || []).filter(t => !(t.recurringTaskId === rtId && !t.done && !t.retired));
+    state.tasks[dk] = (state.tasks[dk] || []).filter(t => !(t.recurringTaskId && idSet.has(t.recurringTaskId) && !t.done && !t.retired));
   });
   saveState();
   renderTaskList();
