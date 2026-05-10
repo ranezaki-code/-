@@ -1973,6 +1973,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn-primary" onclick="loadSampleData()">📥 サンプルデータを読み込む</button>
+          <button class="btn-secondary" onclick="forcePullFromGist()" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700">🆘 Gistから強制取得</button>
           <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">🔍 データ復旧センター</button>
           <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
           <button class="btn-danger" onclick="clearAllData()">🗑 すべてのデータを削除</button>
@@ -2670,7 +2671,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '1.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '83626a2'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10334,6 +10335,32 @@ function clearAllData(){
   else if(currentView === 'dashboard') renderDashboard();
   else if(currentView === 'game') renderGameView();
   else render();
+}
+
+/* Gistから強制取得（タイムスタンプ比較を無視） */
+async function forcePullFromGist(){
+  const id = (localStorage.getItem('kp_gist_id') || '').trim();
+  if(!id){ alert('Gist IDが設定されていません。同期設定を先に行ってください。'); return; }
+  if(!confirm('⚠️ クラウド（Gist）の最新データで、この端末を強制的に上書きします。\n\n・タイムスタンプ比較を行いません\n・現在のローカルデータは自動バックアップに保存されます\n\nよろしいですか？')) return;
+  try{
+    // 念のためバックアップ
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if(cur) localStorage.setItem('ws_v1_emergency_' + Date.now(), cur);
+    // 認証ヘッダがあれば付ける
+    const token = (localStorage.getItem('kp_gist_token') || '').trim();
+    const headers = {'Accept': 'application/vnd.github+json'};
+    if(token) headers['Authorization'] = 'token ' + token;
+    const r = await fetch('https://api.github.com/gists/' + id, {headers});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const file = j.files && j.files['work_schedule_data.json'];
+    if(!file || !file.content) throw new Error('Gistにデータがありません');
+    localStorage.setItem(STORAGE_KEY, file.content);
+    alert('Gistから取得しました。\nページを再読み込みします。');
+    location.reload();
+  }catch(e){
+    alert('取得失敗: ' + (e.message || e));
+  }
 }
 
 /* 直近の自動バックアップから復元 */
