@@ -3233,27 +3233,40 @@ function saveTask(){
       (t.checklist || []).forEach(c => { if(c.id) oldChecks[c.id] = !!c.checked; });
       t.checklist = checklist.map(c => ({...c, checked: c.id in oldChecks ? oldChecks[c.id] : c.checked}));
 
-      // 同名・同日・同担当のグループを extraHours に同期
-      // - グリッドで未チェックになった既存兄弟タスクは削除
+      // 同名・同日・同担当のグループ全体を同期
+      // - 既存兄弟タスクの内容も最新の baseFields で更新（hour と進行状態は維持）
+      // - グリッドで未チェックになった兄弟（未完了）は削除
       // - 新規にチェックされた時刻のタスクは追加
-      // - 主時刻(sh)は除外
       if(!isRecurring){
         const targetKey = newDateKey;
         if(!state.tasks[targetKey]) state.tasks[targetKey] = [];
         const arr = state.tasks[targetKey];
         const wantedHours = new Set(extraHours);
-        const existingSiblings = arr.filter(x => x.id !== t.id && (x.text || '') === text && (x.tan || 'both') === (tan || 'both'));
-        // 削除対象：既存だが wanted に含まれず、未完了のもの（完了/リタイア済みは履歴として残す）
+        const existingSiblings = arr.filter(x => x.id !== t.id && (x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'));
+        // 削除対象：未チェック かつ 未処理のもの
         const idsToRemove = existingSiblings
-          .filter(x => !wantedHours.has(x.hour))
-          .filter(x => !x.done && !x.retired)
+          .filter(x => !wantedHours.has(x.hour) && !x.done && !x.retired && !x.skipped)
           .map(x => x.id);
         if(idsToRemove.length > 0){
           state.tasks[targetKey] = arr.filter(x => !idsToRemove.includes(x.id));
         }
+        // 残った兄弟の内容を baseFields で更新（hour と進行状態は維持）
+        state.tasks[targetKey].forEach(x => {
+          if(x.id === t.id) return; // 編集中本体はもう Object.assign 済み
+          if(!((x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'))) return;
+          if(!wantedHours.has(x.hour)) return; // チェック済の兄弟だけ
+          const keepHour = x.hour;
+          const keepMin = x.min;
+          const keepProgress = {done: x.done, completedBy: x.completedBy, completedAt: x.completedAt, retired: x.retired, retiredBy: x.retiredBy, retiredReason: x.retiredReason, retiredAt: x.retiredAt, skipped: x.skipped, skippedBy: x.skippedBy, skippedReason: x.skippedReason, skippedAt: x.skippedAt, carryOvers: x.carryOvers, startedAt: x.startedAt, timerStartedAt: x.timerStartedAt};
+          // チェックリストの既存チェック状態を可能な限り維持
+          const oldChecks = {};
+          (x.checklist || []).forEach(c => { if(c.id) oldChecks[c.id] = !!c.checked; });
+          Object.assign(x, baseFields, {hour: keepHour, min: keepMin, ...keepProgress});
+          x.checklist = checklist.map(c => ({...c, checked: c.id in oldChecks ? oldChecks[c.id] : c.checked}));
+        });
         // 追加対象：wanted のうち、まだ存在しない時刻
         const existingHours = new Set(state.tasks[targetKey]
-          .filter(x => (x.text || '') === text && (x.tan || 'both') === (tan || 'both'))
+          .filter(x => (x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'))
           .map(x => x.hour));
         wantedHours.forEach(h => {
           if(!existingHours.has(h)){
