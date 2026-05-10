@@ -1536,7 +1536,6 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 .break-option .opt-desc{font-size:10px;opacity:.85;line-height:1.4;font-weight:600}
 .break-option.legal{background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border-color:#f59e0b}
 .break-option.legal:hover{background:linear-gradient(135deg,#fde68a,#fbbf24)}
-.break-option.legal::before{content:'⚖';position:absolute;font-size:11px;opacity:.6}
 .break-option{position:relative}
 .break-option.legal .opt-desc{font-weight:700;color:#78350f}
 
@@ -2552,12 +2551,13 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
     <div class="form-group">
       <label>🚦 中断オプション <span style="color:var(--gray);font-weight:400">(必ずやらせる業務はチェックを外す)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
-        絶対にこなしてほしい業務は、繰越やリタイアを禁止できます。<br>
-        <strong>両方OFF</strong>にすると、その日中に完了するしかなくなります。
+        絶対にこなしてほしい業務は、繰越・リタイア・スキップを禁止できます。<br>
+        <strong>すべてOFF</strong>にすると、その日中に完了するしかなくなります（人員不足等で対応できない場合も逃げ道なし）。
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px">
         <label class="zone-chip"><input type="checkbox" id="m-allow-carry" checked><span>↪ 繰り越しを許可</span></label>
         <label class="zone-chip"><input type="checkbox" id="m-allow-retire" checked><span>✗ リタイアを許可</span></label>
+        <label class="zone-chip"><input type="checkbox" id="m-allow-skip" checked><span>⏭ スキップを許可</span></label>
       </div>
     </div>
     <div class="form-group">
@@ -3018,6 +3018,7 @@ function openAddModal(hour, dateOverride){
   document.getElementById('m-carry-penalty').value = '';
   document.getElementById('m-allow-carry').checked = true;
   document.getElementById('m-allow-retire').checked = true;
+  document.getElementById('m-allow-skip').checked = true;
   document.getElementById('m-manual').value = '';
   editingChecklist = [];
   renderChecklistEditor();
@@ -3059,6 +3060,7 @@ function openEditModal(taskId){
   document.getElementById('m-carry-penalty').value = (Number.isFinite(t.carryPenaltyAmount) && t.carryPenaltyAmount > 0) ? t.carryPenaltyAmount : '';
   document.getElementById('m-allow-carry').checked = (t.allowCarry !== false);
   document.getElementById('m-allow-retire').checked = (t.allowRetire !== false);
+  document.getElementById('m-allow-skip').checked = (t.allowSkip !== false);
   document.getElementById('m-manual').value = t.manual || '';
   editingChecklist = (Array.isArray(t.checklist) ? t.checklist : []).map(it => ({
     id: it.id || ('cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6)),
@@ -3090,6 +3092,7 @@ function saveTask(){
   const zones = Array.from(document.querySelectorAll('input[name=m-zone]:checked')).map(cb => cb.value);
   const allowCarry  = document.getElementById('m-allow-carry').checked;
   const allowRetire = document.getElementById('m-allow-retire').checked;
+  const allowSkip   = document.getElementById('m-allow-skip').checked;
   const memo = document.getElementById('m-memo').value.trim();
   const manual = document.getElementById('m-manual').value.trim();
   const timerMinRaw = document.getElementById('m-timer-min').value;
@@ -3120,7 +3123,7 @@ function saveTask(){
     timerSeconds, estimatedSeconds,
     points,
     carryPenaltyEvery, carryPenaltyAmount,
-    allowCarry, allowRetire,
+    allowCarry, allowRetire, allowSkip,
     checklist
   };
 
@@ -4584,16 +4587,16 @@ function renderTask(t, ctx){
   const retireBtn = canRetire
     ? `<button class="task-icon-btn retire" onclick="openRetireModal('${t.id}', event)" title="今日は諦める（-15pt / 清掃度-10）">✗ リタイア</button>`
     : '';
-  const canSkip = !t.done && !t.retired && !t.skipped;
+  const canSkip = !t.done && !t.retired && !t.skipped && (t.allowSkip !== false);
   const skipBtn = canSkip
     ? `<button class="task-icon-btn skip" onclick="openSkipModal('${t.id}', event)" title="人員不足など、そもそも実施できない場合（減点なし）">⏭ スキップ</button>`
     : '';
   const skippedBadge = t.skipped
     ? `<span class="skipped-badge" title="${escapeHtml(t.skippedReason||'')}">⏭ ${escapeHtml(t.skippedBy||'?')}が不在スキップ</span>`
     : '';
-  // 必須業務マーク（繰越もリタイアも禁止）
-  const mustDoBadge = (!t.done && !t.retired && !t.skipped && t.allowCarry === false && t.allowRetire === false)
-    ? `<span class="must-do-badge" title="繰越・リタイア共に禁止：必ず完了してください">🚦 必須</span>`
+  // 必須業務マーク（繰越・リタイア・スキップ全部禁止）
+  const mustDoBadge = (!t.done && !t.retired && !t.skipped && t.allowCarry === false && t.allowRetire === false && t.allowSkip === false)
+    ? `<span class="must-do-badge" title="繰越・リタイア・スキップすべて禁止：必ず完了してください">🚦 必須</span>`
     : '';
   const retiredBadge = t.retired
     ? `<span class="retired-badge" title="${escapeHtml(t.retiredReason||'')}">✗ ${escapeHtml(t.retiredBy||'?')}がリタイア</span>`
@@ -4868,6 +4871,7 @@ function openSkipModal(taskId, ev){
   if(t.done){ alert('完了済みのタスクはスキップできません'); return; }
   if(t.retired){ alert('リタイア済みのタスクです'); return; }
   if(t.skipped){ alert('既にスキップ済みです'); return; }
+  if(t.allowSkip === false){ alert('このタスクはスキップ禁止に設定されています'); return; }
   skippingTaskId = taskId;
   document.getElementById('skip-task-info').textContent = t.text || '(無題)';
   document.getElementById('skip-reason').value = '';
@@ -8089,7 +8093,7 @@ function renderStaffTaskCard(t){
   const retireBtn = (!t.done && !t.retired && !t.skipped && t.allowRetire !== false)
     ? `<button class="task-icon-btn retire" onclick="openRetireModal('${safeId}', event)" title="今日は諦める">✗ リタイア</button>`
     : '';
-  const skipBtn = (!t.done && !t.retired && !t.skipped)
+  const skipBtn = (!t.done && !t.retired && !t.skipped && t.allowSkip !== false)
     ? `<button class="task-icon-btn skip" onclick="openSkipModal('${safeId}', event)" title="人員不足など">⏭ スキップ</button>`
     : '';
   const timelineBtn = `<button class="task-icon-btn" style="border:1px solid var(--border);border-radius:14px;padding:3px 12px" onclick="goToTaskDate('${safeDateKey}', '${safeId}')" title="タイムラインで見る">📋</button>`;
