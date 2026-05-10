@@ -9030,45 +9030,64 @@ function renderTaskList(){
     || (a.order ?? 999) - (b.order ?? 999)
   );
 
-  // 統計表示（管理用：表示件数 / 全件数のみ）
+  // 同名・同担当・同日のタスクをグループ化（複数時刻に作成されたタスク向け）
+  const groups = [];
+  const groupMap = new Map();
+  filtered.forEach(t => {
+    const key = `${t.dateKey}|${t.tan || 'both'}|${(t.text || '').trim()}`;
+    let g = groupMap.get(key);
+    if(!g){
+      g = {key, dateKey: t.dateKey, tan: t.tan || 'both', text: t.text || '', items: []};
+      groupMap.set(key, g);
+      groups.push(g);
+    }
+    g.items.push(t);
+  });
+  // 各グループ内を時刻順
+  groups.forEach(g => g.items.sort((a,b) => (a.hour ?? 0) - (b.hour ?? 0) || (a.min ?? 0) - (b.min ?? 0)));
+
+  // 統計表示
   document.getElementById('tl-stat').textContent =
-    `${filtered.length}件表示　|　全タスク数 ${all.length}件`;
+    `${groups.length}件表示（${filtered.length}個のタスク）　|　全タスク数 ${all.length}件`;
 
   // テーブル描画
   const tanLabel = {counter: 'カウンター', back: '後方', both: '両方'};
   const wrap = document.getElementById('tl-table-wrap');
-  if(filtered.length === 0){
+  if(groups.length === 0){
     wrap.innerHTML = '<div class="tl-empty">条件に該当するタスクがありません</div>';
   } else {
     const MAX = 300;
-    const display = filtered.slice(0, MAX);
-    const more = filtered.length > MAX
-      ? `<div class="tl-stat" style="text-align:center;padding:10px">... 他 ${filtered.length - MAX} 件（表示は最大${MAX}件）</div>` : '';
+    const display = groups.slice(0, MAX);
+    const more = groups.length > MAX
+      ? `<div class="tl-stat" style="text-align:center;padding:10px">... 他 ${groups.length - MAX} 件（表示は最大${MAX}件）</div>` : '';
     wrap.innerHTML = `<table class="tl-table">
       <thead><tr>
         <th style="width:90px">担当</th>
-        <th style="width:60px">時刻</th>
+        <th style="width:160px">時刻</th>
         <th>タスク内容</th>
         <th style="width:90px">日付</th>
         <th style="width:140px">操作</th>
       </tr></thead>
       <tbody>
-      ${display.map(t => {
-        const [y,mn,dy] = t.dateKey.split('-').map(Number);
+      ${display.map(g => {
+        const [y,mn,dy] = g.dateKey.split('-').map(Number);
         const dow = WEEKDAYS[new Date(y, mn-1, dy).getDay()];
-        const tan = t.tan || 'both';
-        const isFixed = ['counter','back','both'].includes(tan);
-        const tanText = isFixed ? tanLabel[tan] : ('👤 ' + tan);
-        const tanCls = isFixed ? `t-${tan}` : 't-named';
+        const isFixed = ['counter','back','both'].includes(g.tan);
+        const tanText = isFixed ? tanLabel[g.tan] : ('👤 ' + g.tan);
+        const tanCls = isFixed ? `t-${g.tan}` : 't-named';
+        const cnt = g.items.length;
+        const timesStr = g.items.map(it => `${String(it.hour ?? 0).padStart(2,'0')}:${String(it.min ?? 0).padStart(2,'0')}`).join(' / ');
+        const cntBadge = cnt > 1 ? `<span style="font-size:10px;font-weight:800;color:#fff;background:#7c3aed;padding:1px 6px;border-radius:8px;margin-left:6px">×${cnt}</span>` : '';
+        const first = g.items[0];
         return `<tr>
           <td class="tl-tan-cell"><span class="tag-tan ${tanCls}">${escapeHtml(tanText)}</span></td>
-          <td class="tl-time">${String(t.hour ?? 0).padStart(2,'0')}:${String(t.min ?? 0).padStart(2,'0')}</td>
-          <td class="tl-text">${escapeHtml(t.text || '')}</td>
+          <td class="tl-time" style="font-size:11px">${timesStr}</td>
+          <td class="tl-text">${escapeHtml(g.text)}${cntBadge}</td>
           <td class="tl-date">${mn}/${dy}（${dow}）</td>
           <td class="tl-actions">
-            <button class="btn-secondary" onclick="goToTaskDate('${t.dateKey}', '${t.id}')" title="この日のタイムラインを表示">📋</button>
-            <button class="btn-secondary" onclick="openEditModalFromList('${t.dateKey}','${t.id}')" title="編集">✏️</button>
-            <button class="btn-danger" onclick="deleteTaskFromList('${t.dateKey}','${t.id}')" title="削除">🗑</button>
+            <button class="btn-secondary" onclick="goToTaskDate('${g.dateKey}', '${first.id}')" title="この日のタイムラインを表示">📋</button>
+            <button class="btn-secondary" onclick="openEditModalFromList('${g.dateKey}','${first.id}')" title="編集（最初の時刻のタスクを編集）">✏️</button>
+            <button class="btn-danger" onclick="deleteTaskGroupFromList('${g.dateKey}','${encodeURIComponent(g.text)}','${g.tan}')" title="同名タスクをまとめて削除">🗑</button>
           </td>
         </tr>`;
       }).join('')}
@@ -9110,6 +9129,28 @@ function openEditModalFromList(dKey, taskId){
 function deleteTaskFromList(dKey, taskId){
   if(!confirm('このタスクを削除しますか？')) return;
   state.tasks[dKey] = (state.tasks[dKey] || []).filter(x => x.id !== taskId);
+  saveState();
+  renderTaskList();
+}
+/* 同名・同担当タスクをまとめて削除（複数時刻に作成されたタスク向け） */
+function deleteTaskGroupFromList(dKey, encodedText, tan){
+  const text = decodeURIComponent(encodedText);
+  const matches = (state.tasks[dKey] || []).filter(x => (x.text || '') === text && (x.tan || 'both') === tan);
+  if(matches.length === 0) return;
+  const msg = matches.length === 1
+    ? 'このタスクを削除しますか？'
+    : `「${text}」(${matches.length}件 / ${matches.map(m => `${String(m.hour||0).padStart(2,'0')}:${String(m.min||0).padStart(2,'0')}`).join(', ')}) をまとめて削除しますか？`;
+  if(!confirm(msg)) return;
+  // 繰り返しタスク由来のものは、テンプレートも削除するか聞く
+  const recurIds = [...new Set(matches.map(m => m.recurringTaskId).filter(Boolean))];
+  let alsoDeleteTemplate = false;
+  if(recurIds.length > 0){
+    alsoDeleteTemplate = confirm('🔁 繰り返しタスクが含まれています。\n\n[OK] 繰り返し設定もすべて解除（今後の自動作成も停止）\n[キャンセル] このインスタンスのみ削除（次回以降は自動で再作成）');
+  }
+  state.tasks[dKey] = (state.tasks[dKey] || []).filter(x => !((x.text || '') === text && (x.tan || 'both') === tan));
+  if(alsoDeleteTemplate && recurIds.length > 0){
+    state.recurringTasks = (state.recurringTasks || []).filter(rt => !recurIds.includes(rt.id));
+  }
   saveState();
   renderTaskList();
 }
