@@ -1129,6 +1129,16 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .checklist-edit-item.is-section input[type=text]{font-weight:700;color:#3730a3;background:#fff}
 .checklist-section-header{font-size:13px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:8px 12px;border-radius:6px;border-left:3px solid #4f46e5;margin-top:8px}
 .checklist-section-header:first-child{margin-top:0}
+.recovery-item{background:#fff;border:2px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.recovery-item.is-current{border-color:var(--green);background:var(--green-lt)}
+.recovery-header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.recovery-key{font-size:11px;font-family:monospace;color:#475569;word-break:break-all}
+.recovery-badge{display:inline-block;background:var(--green);color:#fff;font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:6px}
+.recovery-time{font-size:11px;color:var(--gray);font-variant-numeric:tabular-nums}
+.recovery-stats{font-size:13px;color:var(--main);margin-bottom:4px}
+.recovery-staff{font-size:12px;color:#475569;margin-bottom:8px;padding:4px 8px;background:#f8fafc;border-radius:4px}
+.recovery-actions{display:flex;gap:6px;flex-wrap:wrap}
+.recovery-actions button{font-size:12px;padding:6px 10px}
 
 /* 従業員チップ（管理画面） */
 .staff-chip{display:inline-flex;align-items:center;gap:6px;background:var(--main-lt);color:var(--main);border-radius:14px;padding:6px 6px 6px 12px;font-size:13px;font-weight:600;border:1px solid var(--main)}
@@ -1963,6 +1973,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn-primary" onclick="loadSampleData()">📥 サンプルデータを読み込む</button>
+          <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">🔍 データ復旧センター</button>
           <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
           <button class="btn-danger" onclick="clearAllData()">🗑 すべてのデータを削除</button>
         </div>
@@ -2451,6 +2462,21 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   </div>
 </div>
 
+<!-- データ復旧センター -->
+<div class="modal-overlay" id="recovery-modal">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-title">🔍 データ復旧センター</div>
+    <div style="font-size:12px;color:var(--gray);line-height:1.6;margin-bottom:10px">
+      この端末のブラウザ内に保存されているデータの候補を一覧します。<br>
+      各候補の「👥 従業員」「📋 タスク数」「📅 更新日時」を見て、戻したいデータの「⏪ これに戻す」を押してください。
+    </div>
+    <div id="recovery-list"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-secondary" onclick="closeRecoveryCenter()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- タスク追加/編集モーダル -->
 <div class="modal-overlay" id="task-modal">
   <div class="modal-box">
@@ -2644,7 +2670,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '1.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'bbb0723'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10319,6 +10345,89 @@ function restoreLastAutobackup(){
   localStorage.setItem(STORAGE_KEY, localStorage.getItem(latest));
   alert('復元しました。再読み込みします。');
   location.reload();
+}
+
+/* ========== データ復旧センター（ブラウザのストレージを総当りで探す） ========== */
+function openRecoveryCenter(){
+  const candidates = [];
+  // 1) localStorage の全キーを舐める
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const v = localStorage.getItem(k) || '';
+    // ws_v1 系 / JSON っぽいもの / staff フィールドを含むものを候補化
+    let parsed = null;
+    try{ parsed = JSON.parse(v); }catch(_){}
+    if(parsed && typeof parsed === 'object' && (Array.isArray(parsed.staff) || parsed.tasks || parsed.recurringTasks)){
+      const tasks = parsed.tasks || {};
+      const totalTasks = Object.values(tasks).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+      candidates.push({
+        key: k,
+        size: v.length,
+        staff: Array.isArray(parsed.staff) ? parsed.staff : [],
+        totalTasks,
+        recurring: Array.isArray(parsed.recurringTasks) ? parsed.recurringTasks.length : 0,
+        modifiedAt: parsed._modifiedAt || null
+      });
+    }
+  }
+  // 2) 表示
+  const win = document.getElementById('recovery-modal');
+  const list = document.getElementById('recovery-list');
+  if(candidates.length === 0){
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--gray)">データらしき情報は見つかりませんでした</div>';
+  } else {
+    candidates.sort((a, b) => (b.modifiedAt || '').localeCompare(a.modifiedAt || ''));
+    list.innerHTML = candidates.map(c => {
+      const isCurrent = c.key === STORAGE_KEY;
+      const dt = c.modifiedAt ? new Date(c.modifiedAt).toLocaleString('ja-JP') : '不明';
+      const staffPreview = c.staff.length > 0 ? c.staff.slice(0, 8).join('・') + (c.staff.length > 8 ? `…(計${c.staff.length}名)` : '') : '（従業員0名）';
+      const sizeKB = (c.size / 1024).toFixed(1);
+      return `<div class="recovery-item ${isCurrent ? 'is-current' : ''}">
+        <div class="recovery-header">
+          <span class="recovery-key">${escapeHtml(c.key)}${isCurrent ? '<span class="recovery-badge">現在のデータ</span>' : ''}</span>
+          <span class="recovery-time">${dt}</span>
+        </div>
+        <div class="recovery-stats">
+          📋 タスク <strong>${c.totalTasks}</strong> ・ 🔁 繰り返し <strong>${c.recurring}</strong> ・ 容量 ${sizeKB}KB
+        </div>
+        <div class="recovery-staff">👥 ${escapeHtml(staffPreview)}</div>
+        <div class="recovery-actions">
+          ${isCurrent ? '<span style="font-size:12px;color:var(--gray)">現在使用中</span>' : `<button class="btn-primary" onclick="restoreFromKey('${escapeHtml(c.key)}')">⏪ これに戻す</button>`}
+          <button class="btn-secondary" onclick="previewRecoveryKey('${escapeHtml(c.key)}')">👁 中身を見る</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  win.classList.add('show');
+}
+function closeRecoveryCenter(){ document.getElementById('recovery-modal').classList.remove('show'); }
+function restoreFromKey(key){
+  const v = localStorage.getItem(key);
+  if(!v){ alert('データが見つかりません'); return; }
+  if(!confirm(`「${key}」のデータで現在のデータを上書きします。\nよろしいですか？`)) return;
+  // 万一のため、現状を別キーに退避
+  try{ localStorage.setItem('ws_v1_autobackup_' + Date.now(), localStorage.getItem(STORAGE_KEY) || ''); }catch(_){}
+  localStorage.setItem(STORAGE_KEY, v);
+  alert('復元しました。再読み込みします。');
+  location.reload();
+}
+function previewRecoveryKey(key){
+  const v = localStorage.getItem(key);
+  if(!v){ alert('データなし'); return; }
+  let preview = v.slice(0, 1500);
+  try{
+    const o = JSON.parse(v);
+    preview = JSON.stringify({
+      staff: o.staff,
+      categories: o.categories,
+      taskDates: Object.keys(o.tasks || {}).sort(),
+      recurringCount: (o.recurringTasks || []).length,
+      requestTasks: (o.requestTasks || []).map(r => ({text: r.text, by: r.from, at: r.createdAt})),
+      _modifiedAt: o._modifiedAt
+    }, null, 2);
+  }catch(_){}
+  alert('=== ' + key + ' ===\n\n' + preview);
 }
 
 /* ========== 従業員管理 ========== */
