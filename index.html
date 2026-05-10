@@ -10072,7 +10072,7 @@ function gistSyncDebouncedPush(){
   gistPushTimer = setTimeout(() => {
     gistPushTimer = null;
     gistPush();
-  }, 3000);
+  }, 800);
 }
 
 async function gistPull(silent){
@@ -10093,6 +10093,18 @@ async function gistPull(silent){
       gistUpdateStatus();
       return false;
     }
+    // タイムスタンプ比較：ローカルが新しければリモートを上書きしない（push を予約）
+    try{
+      const remoteState = JSON.parse(f.content);
+      const localAt = state && state._modifiedAt;
+      const remoteAt = remoteState && remoteState._modifiedAt;
+      if(localAt && remoteAt && new Date(localAt).getTime() > new Date(remoteAt).getTime()){
+        // ローカルの方が新しい → 取り込まずに push を予約してリモートを更新
+        gistSyncDebouncedPush();
+        gistPolling = false;
+        return false;
+      }
+    }catch(e){ /* JSON 不正なら通常通り取り込む */ }
     gistLastRemoteContent = f.content;
     localStorage.setItem(STORAGE_KEY, f.content);
     localStorage.setItem(GIST_KEY.lastPullWS, new Date().toISOString());
@@ -10265,12 +10277,38 @@ function startGistPolling(){
   }, POLL_INTERVAL_MS);
 }
 
-/* saveState を Gist push にフック */
+/* saveState を Gist push にフック。state._modifiedAt も更新してタイムスタンプ比較に使う */
 const _origSaveState = saveState;
 saveState = function(){
+  if(state && typeof state === 'object'){
+    state._modifiedAt = new Date().toISOString();
+  }
   _origSaveState();
   gistSyncDebouncedPush();
 };
+/* リロード/タブ閉じる前に未送信のpushを keepalive で送り出す */
+window.addEventListener('beforeunload', () => {
+  if(gistPushTimer){
+    clearTimeout(gistPushTimer);
+    gistPushTimer = null;
+    const {token, id} = gistCfg();
+    if(token && id){
+      try{
+        fetch('https://api.github.com/gists/' + id, {
+          method: 'PATCH',
+          keepalive: true,
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          },
+          body: JSON.stringify({files: {[GIST_FILENAME_WS]: {content: gistPayloadContent()}}})
+        });
+      }catch(e){ /* ignore */ }
+    }
+  }
+});
 
 /* ========== 起動 ========== */
 async function start(){
