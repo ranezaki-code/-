@@ -1390,6 +1390,15 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 .zone-chip:hover{border-color:var(--main);background:var(--main-lt)}
 .zone-chip input{margin:0}
 .zone-chip:has(input:checked){border-color:var(--main);background:var(--main-lt);color:var(--main);font-weight:800}
+/* 24時間グリッド：同じタスクを複数時刻に */
+.hour-multi{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+@media(min-width:520px){.hour-multi{grid-template-columns:repeat(12,1fr)}}
+.hour-chip{display:inline-flex;align-items:center;justify-content:center;padding:6px 4px;border:1.5px solid var(--border);border-radius:6px;background:#fff;font-size:11px;font-weight:700;color:#6b7280;cursor:pointer;transition:all .15s;user-select:none;text-align:center}
+.hour-chip input{display:none}
+.hour-chip:hover{border-color:var(--main);background:var(--main-lt);color:var(--main)}
+.hour-chip:has(input:checked){border-color:var(--main);background:var(--main);color:#fff;font-weight:900}
+.hour-chip.is-primary{border-color:#f59e0b;background:#fef3c7;color:#7c2d12;font-weight:800;cursor:default}
+.hour-chip.is-primary::after{content:'(主)';font-size:9px;margin-left:2px}
 .fz-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
 /* === QSC セクション + 横長行 === */
 .fr-section{margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff}
@@ -2473,6 +2482,15 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
       </div>
     </div>
     <div class="form-group">
+      <label>🕒 同じタスクを複数の時刻にも作成 <span style="color:var(--gray);font-weight:400">(任意)</span></label>
+      <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
+        定期業務(店内清掃を9時/12時/18時など)を一括作成。<br>
+        選択した時刻ごとに同じ内容のタスクが <strong>独立して作成</strong> されます(分は上の開始時刻と同じ)。<br>
+        <strong>未選択なら通常通り上の時刻だけ</strong>に作成されます。
+      </div>
+      <div id="m-times-multi" class="hour-multi"></div>
+    </div>
+    <div class="form-group">
       <label>担当</label>
       <select id="m-tan"></select>
       <div style="font-size:11px;color:var(--gray);margin-top:4px">💡 個人名は「タスク一覧 > 従業員管理」から追加できます</div>
@@ -2917,6 +2935,30 @@ function renderTanOptions(currentValue){
   if(sel.value !== currentValue) sel.value = 'both';
 }
 
+// 主時刻が変わったら multi picker を再描画（既存選択は維持）
+document.addEventListener('input', e => {
+  if(e.target && e.target.id === 'm-time-start' && document.getElementById('m-times-multi')){
+    const v = e.target.value || '00:00';
+    const h = parseInt(v.split(':')[0], 10) || 0;
+    const cur = Array.from(document.querySelectorAll('input[name=m-mtime]:checked')).map(cb => parseInt(cb.value,10)).filter(x => x !== h);
+    renderMultiHourPicker(h, cur);
+  }
+});
+function renderMultiHourPicker(primaryHour, selectedHours){
+  const sel = new Set((selectedHours || []).map(Number));
+  const container = document.getElementById('m-times-multi');
+  if(!container) return;
+  const cells = [];
+  for(let h = 0; h < 24; h++){
+    const isPrimary = (h === primaryHour);
+    if(isPrimary){
+      cells.push(`<span class="hour-chip is-primary">${String(h).padStart(2,'0')}時</span>`);
+    } else {
+      cells.push(`<label class="hour-chip"><input type="checkbox" name="m-mtime" value="${h}" ${sel.has(h)?'checked':''}><span>${String(h).padStart(2,'0')}時</span></label>`);
+    }
+  }
+  container.innerHTML = cells.join('');
+}
 function renderZoneCheckboxes(selected){
   const sel = new Set(selected || []);
   const container = document.getElementById('m-zones');
@@ -3009,6 +3051,7 @@ function openAddModal(hour, dateOverride){
   renderTanOptions('both');
   renderCategoryCheckboxes([]);
   renderZoneCheckboxes([]);
+  renderMultiHourPicker(hour, []);
   document.getElementById('m-cat-new').value = '';
   document.getElementById('m-memo').value = '';
   document.getElementById('m-timer-min').value = '';
@@ -3051,6 +3094,7 @@ function openEditModal(taskId){
   renderTanOptions(t.tan || 'both');
   renderCategoryCheckboxes(Array.isArray(t.cats) ? t.cats : []);
   renderZoneCheckboxes(Array.isArray(t.zones) ? t.zones : []);
+  renderMultiHourPicker(t.hour ?? 0, []);
   document.getElementById('m-cat-new').value = '';
   document.getElementById('m-memo').value = t.memo || '';
   document.getElementById('m-timer-min').value = (t.timerSeconds && t.timerSeconds > 0) ? Math.round(t.timerSeconds / 60) : '';
@@ -3115,6 +3159,10 @@ function saveTask(){
     .filter(i => (i.text || '').trim().length > 0)
     .map(i => ({id: i.id, text: i.text.trim(), checked: !!i.checked}));
 
+  // 複数時刻：チェック済みの追加時刻（主時刻 sh は除外）
+  const extraHours = Array.from(document.querySelectorAll('input[name=m-mtime]:checked'))
+    .map(cb => parseInt(cb.value, 10))
+    .filter(h => Number.isFinite(h) && h !== sh);
   // 共通：基本フィールド
   const baseFields = {
     text, hour: sh, min: sm,
@@ -3175,27 +3223,34 @@ function saveTask(){
       }
     }
   } else {
+    // 新規作成。主時刻 + extraHours の合計分、独立タスクを作る
+    const hoursToCreate = [sh, ...extraHours];
     if(isRecurring){
       // 新規：繰り返しテンプレート登録 → 該当する日付に展開
-      const rt = Object.assign({
-        id: 'rt_' + Date.now() + '_' + Math.floor(Math.random()*1000),
-        createdAt: new Date().toISOString(),
-        recurringDows: selectedDows.slice()
-      }, baseFields);
       if(!Array.isArray(state.recurringTasks)) state.recurringTasks = [];
-      state.recurringTasks.push(rt);
-      // 表示中の日付がマッチするなら即時展開
+      hoursToCreate.forEach((h, i) => {
+        const rt = Object.assign({}, baseFields, {
+          id: 'rt_' + Date.now() + '_' + i + '_' + Math.floor(Math.random()*1000),
+          createdAt: new Date().toISOString(),
+          recurringDows: selectedDows.slice(),
+          hour: h
+        });
+        state.recurringTasks.push(rt);
+      });
       materializeRecurringForDate(currentDate);
     } else {
       // 新規：単発タスク
       if(!state.tasks[newDateKey]) state.tasks[newDateKey] = [];
-      state.tasks[newDateKey].push(Object.assign({
-        id: 't_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-        done: false,
-        carryOvers: [],
-        order: nextOrderInHour(newDateKey, sh),
-        createdAt: new Date().toISOString()
-      }, baseFields));
+      hoursToCreate.forEach((h, i) => {
+        state.tasks[newDateKey].push(Object.assign({}, baseFields, {
+          id: 't_' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000),
+          done: false,
+          carryOvers: [],
+          order: nextOrderInHour(newDateKey, h),
+          createdAt: new Date().toISOString(),
+          hour: h
+        }));
+      });
     }
   }
   saveState();
