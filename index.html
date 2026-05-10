@@ -4439,13 +4439,15 @@ function render(){
 
     function renderGroupHtml(list, opts){
       if(list.length === 0) return '';
-      const nextTaskId = (list.find(t => !t.done) || {}).id || null;
+      // 「未処理」= 未完了 かつ 未リタイア かつ 未スキップ
+      const isPending = x => !x.done && !x.retired && !x.skipped;
+      const nextTaskId = (list.find(isPending) || {}).id || null;
       let foundFirstUndone = false;
       const groupTan = opts && opts.groupTan;
       return list.map((t, i) => {
         const isNext = (t.id === nextTaskId);
-        const isQueued = !t.done && !isNext && foundFirstUndone;
-        if(!t.done) foundFirstUndone = true;
+        const isQueued = isPending(t) && !isNext && foundFirstUndone;
+        if(isPending(t)) foundFirstUndone = true;
         return renderTask(t, {index: i, total: list.length, isNext, isQueued, isCarry: !!(opts && opts.isCarry), groupTan});
       }).join('');
     }
