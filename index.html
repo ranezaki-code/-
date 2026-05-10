@@ -7269,7 +7269,7 @@ function renderGameView(){
         <div class="fi-icon">${e.food.icon}</div>
         <div class="fi-name">${escapeHtml(e.food.name)}</div>
         <div class="fi-pt">+${e.food.evoPt}pt × ${e.count}</div>
-        <button class="fi-feed-btn" onclick="feedMascot('${safeNm}','${e.food.id}')">🍴 店長ねこにあげる</button>
+        <button class="fi-feed-btn" onclick="feedMascot('${safeNm}','${e.food.id}',event)">🍴 店長ねこにあげる</button>
       </div>`).join('');
     }
     coll.innerHTML = `${collTabsHtml}
@@ -9111,18 +9111,29 @@ function renderTaskList(){
     || (a.order ?? 999) - (b.order ?? 999)
   );
 
-  // 同名・同担当・同日のタスクをグループ化（複数時刻に作成されたタスク向け）
+  // タスクをグループ化:
+  // - 繰り返しタスク (recurringTaskId 持ち) → テンプレート単位で1行（日付不問）
+  // - 単発タスク → 同日・同名・同担当を1行
   const groups = [];
   const groupMap = new Map();
   filtered.forEach(t => {
-    const key = `${t.dateKey}|${t.tan || 'both'}|${(t.text || '').trim()}`;
+    let key, isRecur;
+    if(t.recurringTaskId){
+      key = `R|${t.recurringTaskId}`;
+      isRecur = true;
+    } else {
+      key = `S|${t.dateKey}|${t.tan || 'both'}|${(t.text || '').trim()}`;
+      isRecur = false;
+    }
     let g = groupMap.get(key);
     if(!g){
-      g = {key, dateKey: t.dateKey, tan: t.tan || 'both', text: t.text || '', items: []};
+      g = {key, isRecur, recurringTaskId: t.recurringTaskId || null, dateKey: t.dateKey, tan: t.tan || 'both', text: t.text || '', items: [], dateKeys: new Set(), hourSet: new Set()};
       groupMap.set(key, g);
       groups.push(g);
     }
     g.items.push(t);
+    g.dateKeys.add(t.dateKey);
+    g.hourSet.add(t.hour);
   });
   // 各グループ内を時刻順
   groups.forEach(g => g.items.sort((a,b) => (a.hour ?? 0) - (b.hour ?? 0) || (a.min ?? 0) - (b.min ?? 0)));
@@ -9151,24 +9162,45 @@ function renderTaskList(){
       </tr></thead>
       <tbody>
       ${display.map(g => {
-        const [y,mn,dy] = g.dateKey.split('-').map(Number);
-        const dow = WEEKDAYS[new Date(y, mn-1, dy).getDay()];
         const isFixed = ['counter','back','both'].includes(g.tan);
         const tanText = isFixed ? tanLabel[g.tan] : ('👤 ' + g.tan);
         const tanCls = isFixed ? `t-${g.tan}` : 't-named';
-        const cnt = g.items.length;
-        const timesStr = g.items.map(it => `${String(it.hour ?? 0).padStart(2,'0')}:${String(it.min ?? 0).padStart(2,'0')}`).join(' / ');
-        const cntBadge = cnt > 1 ? `<span style="font-size:10px;font-weight:800;color:#fff;background:#7c3aed;padding:1px 6px;border-radius:8px;margin-left:6px">×${cnt}</span>` : '';
-        const first = g.items[0];
+        // 時刻：ユニークな hour で集約（recurring 時は全日付で同じ時刻なので1セット）
+        const uniqHours = Array.from(g.hourSet).filter(h => h != null).sort((a,b) => a - b);
+        const first = g.items.find(x => x.hour === uniqHours[0]) || g.items[0];
+        const timesStr = uniqHours.map(h => {
+          const sample = g.items.find(x => x.hour === h);
+          return `${String(h).padStart(2,'0')}:${String((sample && sample.min) || 0).padStart(2,'0')}`;
+        }).join(' / ');
+        const hourCnt = uniqHours.length;
+        const cntBadge = hourCnt > 1 ? `<span style="font-size:10px;font-weight:800;color:#fff;background:#7c3aed;padding:1px 6px;border-radius:8px;margin-left:6px">×${hourCnt}</span>` : '';
+        // 日付列：recurring なら曜日リスト、単発なら日付
+        let dateCellHtml;
+        if(g.isRecur){
+          const rt = (state.recurringTasks || []).find(x => x.id === g.recurringTaskId);
+          const dows = (rt && rt.recurringDows) || [];
+          const dowMap = ['日','月','火','水','木','金','土'];
+          const sortedDows = dows.slice().sort();
+          let dowText = '';
+          if(sortedDows.length === 7) dowText = '毎日';
+          else if(sortedDows.length === 5 && sortedDows.join() === '1,2,3,4,5') dowText = '平日';
+          else if(sortedDows.length === 2 && sortedDows.join() === '0,6') dowText = '週末';
+          else dowText = sortedDows.map(d => dowMap[d]).join('・');
+          dateCellHtml = `<span style="font-size:10px;font-weight:800;color:#fff;background:#10b981;padding:1px 6px;border-radius:6px">🔁 ${escapeHtml(dowText)}</span>`;
+        } else {
+          const [y,mn,dy] = g.dateKey.split('-').map(Number);
+          const dow = WEEKDAYS[new Date(y, mn-1, dy).getDay()];
+          dateCellHtml = `${mn}/${dy}（${dow}）`;
+        }
         return `<tr>
           <td class="tl-tan-cell"><span class="tag-tan ${tanCls}">${escapeHtml(tanText)}</span></td>
           <td class="tl-time" style="font-size:11px">${timesStr}</td>
           <td class="tl-text">${escapeHtml(g.text)}${cntBadge}</td>
-          <td class="tl-date">${mn}/${dy}（${dow}）</td>
+          <td class="tl-date">${dateCellHtml}</td>
           <td class="tl-actions">
-            <button class="btn-secondary" onclick="goToTaskDate('${g.dateKey}', '${first.id}')" title="この日のタイムラインを表示">📋</button>
-            <button class="btn-secondary" onclick="openEditModalFromList('${g.dateKey}','${first.id}')" title="編集（最初の時刻のタスクを編集）">✏️</button>
-            <button class="btn-danger" onclick="deleteTaskGroupFromList('${g.dateKey}','${encodeURIComponent(g.text)}','${g.tan}')" title="同名タスクをまとめて削除">🗑</button>
+            <button class="btn-secondary" onclick="goToTaskDate('${g.dateKey}', '${first.id}')" title="${g.isRecur?'タイムラインで確認':'この日のタイムラインを表示'}">📋</button>
+            <button class="btn-secondary" onclick="openEditModalFromList('${g.dateKey}','${first.id}')" title="編集">✏️</button>
+            <button class="btn-danger" onclick="${g.isRecur?`deleteRecurringFromList('${g.recurringTaskId}','${encodeURIComponent(g.text)}')`:`deleteTaskGroupFromList('${g.dateKey}','${encodeURIComponent(g.text)}','${g.tan}')`}" title="${g.isRecur?'繰り返し設定ごと削除':'同名タスクをまとめて削除'}">🗑</button>
           </td>
         </tr>`;
       }).join('')}
@@ -9210,6 +9242,19 @@ function openEditModalFromList(dKey, taskId){
 function deleteTaskFromList(dKey, taskId){
   if(!confirm('このタスクを削除しますか？')) return;
   state.tasks[dKey] = (state.tasks[dKey] || []).filter(x => x.id !== taskId);
+  saveState();
+  renderTaskList();
+}
+/* 繰り返しテンプレート + 全日のインスタンスをまとめて削除 */
+function deleteRecurringFromList(rtId, encodedText){
+  const text = decodeURIComponent(encodedText);
+  if(!confirm(`🔁 繰り返しタスク「${text}」を完全に削除しますか？\n\n・テンプレートを削除（今後の自動作成も停止）\n・既存の全インスタンス（未完了のもの）も削除\n・完了/リタイア済みは履歴として残す`)) return;
+  // テンプレート削除
+  state.recurringTasks = (state.recurringTasks || []).filter(rt => rt.id !== rtId);
+  // 各日付の未処理インスタンスを削除
+  Object.keys(state.tasks || {}).forEach(dk => {
+    state.tasks[dk] = (state.tasks[dk] || []).filter(t => !(t.recurringTaskId === rtId && !t.done && !t.retired));
+  });
   saveState();
   renderTaskList();
 }
