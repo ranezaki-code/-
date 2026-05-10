@@ -4941,8 +4941,10 @@ document.addEventListener('keydown', e => {
     if(typeof closeBreakStartModal === 'function') closeBreakStartModal();
     if(document.getElementById('complete-modal').classList.contains('show')) cancelComplete();
   }
-  if(e.key === 'Enter' && document.getElementById('task-modal').classList.contains('show')){
-    if(e.target.tagName !== 'TEXTAREA') saveTask();
+  // Cmd/Ctrl + Enter のときだけ保存（誤操作防止：通常の Enter ではフィールド内編集に留める）
+  if(e.key === 'Enter' && (e.metaKey || e.ctrlKey) && document.getElementById('task-modal').classList.contains('show')){
+    e.preventDefault();
+    saveTask();
   }
 });
 
