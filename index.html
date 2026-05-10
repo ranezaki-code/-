@@ -5122,10 +5122,9 @@ function escapeHtml(s){
   }[c]));
 }
 
-/* ========== モーダル外クリックで閉じる・キーボード ========== */
-document.getElementById('task-modal').addEventListener('click', e => {
-  if(e.target.id === 'task-modal') closeModal();
-});
+/* ========== モーダル外クリック・キーボード ==========
+   タスク編集モーダルは入力中のデータが消えるのを防ぐため、
+   外側タップでは閉じない（キャンセルボタン・Esc・✕ で閉じる） */
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
     closeModal();
