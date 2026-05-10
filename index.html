@@ -1963,6 +1963,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn-primary" onclick="loadSampleData()">📥 サンプルデータを読み込む</button>
+          <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
           <button class="btn-danger" onclick="clearAllData()">🗑 すべてのデータを削除</button>
         </div>
       </div>
@@ -2643,7 +2644,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '1.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '07a2d2a'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10283,14 +10284,41 @@ function loadSampleData(){
 function clearAllData(){
   if(!confirm('⚠️ すべてのデータを削除します。\n\n・タスク（過去・未来・繰り返し）\n・従業員一覧\n・カテゴリ\n・プリセット\n・ゲームプロフィール（ポイント・称号・アイテム）\n\nこの操作は取り消せません。本当に削除しますか？')) return;
   if(!confirm('最終確認です。\n本当にすべてのデータを削除してよろしいですか？')) return;
+  // 安全装置：「削除」と入力しない限り続行しない
+  const typed = prompt('間違いを防ぐため、最終確認として「削除」と入力してください。\n（キャンセルするには空欄のまま OK か キャンセル）');
+  if(typed !== '削除'){
+    alert('削除をキャンセルしました。');
+    return;
+  }
+  // 安全装置：削除前に自動バックアップ（最新3件まで保持）
+  try{
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if(cur){
+      localStorage.setItem('ws_v1_autobackup_' + Date.now(), cur);
+      // 古いバックアップを削除（最新3件のみ残す）
+      const keys = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_autobackup_')).sort();
+      while(keys.length > 3){ localStorage.removeItem(keys.shift()); }
+    }
+  }catch(e){ console.warn('autobackup failed', e); }
   localStorage.removeItem(STORAGE_KEY);
   // セッション/同期情報は維持
   state = loadState();
-  alert('すべてのデータを削除しました。');
+  alert('すべてのデータを削除しました。\n（万一のため自動バックアップを保存しました：ws_v1_autobackup_*）');
   if(currentView === 'tasklist') renderTaskList();
   else if(currentView === 'dashboard') renderDashboard();
   else if(currentView === 'game') renderGameView();
   else render();
+}
+
+/* 直近の自動バックアップから復元 */
+function restoreLastAutobackup(){
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_autobackup_')).sort();
+  if(keys.length === 0){ alert('バックアップが見つかりません'); return; }
+  const latest = keys[keys.length - 1];
+  if(!confirm(`最新の自動バックアップ（${new Date(parseInt(latest.split('_').pop())).toLocaleString('ja-JP')}）から復元しますか？\n現在のデータは上書きされます。`)) return;
+  localStorage.setItem(STORAGE_KEY, localStorage.getItem(latest));
+  alert('復元しました。再読み込みします。');
+  location.reload();
 }
 
 /* ========== 従業員管理 ========== */
