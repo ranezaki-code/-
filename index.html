@@ -9259,7 +9259,6 @@ function renderTaskList(){
     wrap.innerHTML = `<table class="tl-table">
       <thead><tr>
         <th style="width:90px">担当</th>
-        <th style="width:160px">時刻</th>
         <th>タスク内容</th>
         <th style="width:90px">日付</th>
         <th style="width:140px">操作</th>
@@ -9299,7 +9298,6 @@ function renderTaskList(){
         }
         return `<tr>
           <td class="tl-tan-cell"><span class="tag-tan ${tanCls}">${escapeHtml(tanText)}</span></td>
-          <td class="tl-time" style="font-size:11px">${timesStr}</td>
           <td class="tl-text">${escapeHtml(g.text)}${cntBadge}</td>
           <td class="tl-date">${dateCellHtml}</td>
           <td class="tl-actions">
