@@ -1213,8 +1213,8 @@ body.admin-mode .task-icon-btn.up,body.admin-mode .task-icon-btn.down,body.admin
 #view-tabs-wrap::after{content:'';position:absolute;right:0;top:0;bottom:0;width:30px;background:linear-gradient(to right,transparent,#fff);pointer-events:none;opacity:0;transition:opacity .2s}
 #view-tabs-wrap.has-overflow::after{opacity:1}
 /* 管理者のみのタブ（タイムライン・担当者別・ゲームは常に表示） */
-#tab-db,#tab-list{display:none}
-body.admin-mode #tab-db,body.admin-mode #tab-list{display:inline-block}
+#view-tabs #tab-db,#view-tabs #tab-list{display:none}
+body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:inline-flex}
 
 /* === 担当者別ビュー === */
 #staff-view{padding:14px;background:#f8fafc;min-height:60vh}
