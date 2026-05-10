@@ -1121,6 +1121,11 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .checklist-edit-item .num{font-size:11px;color:var(--gray);width:24px;text-align:right;flex-shrink:0}
 .checklist-edit-item button.del{background:transparent;color:var(--gray);padding:4px 8px;font-size:14px;border-radius:4px}
 .checklist-edit-item button.del:hover{background:var(--red-lt);color:var(--red)}
+.checklist-edit-item.is-section{margin-top:6px;padding:4px 6px;background:#eef2ff;border-radius:6px}
+.checklist-edit-item.is-section .sec-label{font-size:10px;font-weight:800;color:#4f46e5;background:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.checklist-edit-item.is-section input[type=text]{font-weight:700;color:#3730a3;background:#fff}
+.checklist-section-header{font-size:13px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:8px 12px;border-radius:6px;border-left:3px solid #4f46e5;margin-top:8px}
+.checklist-section-header:first-child{margin-top:0}
 
 /* 従業員チップ（管理画面） */
 .staff-chip{display:inline-flex;align-items:center;gap:6px;background:var(--main-lt);color:var(--main);border-radius:14px;padding:6px 6px 6px 12px;font-size:13px;font-weight:600;border:1px solid var(--main)}
@@ -2616,7 +2621,10 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
     <div class="form-group">
       <label>☑ チェックリスト <span style="color:var(--gray);font-weight:400">(任意・登録すると全項目チェック必須になります)</span></label>
       <div id="m-checklist-items" class="checklist-edit-list"></div>
-      <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addChecklistItemEditor()">＋ 項目を追加</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addChecklistItemEditor()">＋ 項目を追加</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px;background:#eef2ff;color:#4f46e5;border-color:#c7d2fe" onclick="addChecklistSectionEditor()">＋ 区分（見出し）</button>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-danger" id="m-del-btn" style="display:none;margin-right:auto" onclick="deleteTask()">削除</button>
@@ -2632,7 +2640,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '1.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '50c4da4'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -2892,11 +2900,15 @@ function instantiateRecurringTask(rt, dKey){
     zones: Array.isArray(rt.zones) ? rt.zones.slice() : [],
     memo: rt.memo || '',
     manual: rt.manual || '',
-    checklist: (rt.checklist || []).map(c => ({
-      id: 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-      text: c.text,
-      checked: false
-    })),
+    checklist: (rt.checklist || []).map(c => {
+      const o = {
+        id: 'cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+        text: c.text,
+        checked: false
+      };
+      if(c.type === 'section') o.type = 'section';
+      return o;
+    }),
     timerSeconds: rt.timerSeconds || null,
     estimatedSeconds: rt.estimatedSeconds || null,
     points: (Number.isFinite(rt.points) && rt.points > 0) ? rt.points : null,
@@ -3034,26 +3046,52 @@ function renderChecklistEditor(){
   const container = document.getElementById('m-checklist-items');
   if(!container) return;
   if(editingChecklist.length === 0){
-    container.innerHTML = '<div style="font-size:11px;color:var(--gray);font-style:italic;padding:4px 0">項目なし。「＋ 項目を追加」で登録してください。</div>';
+    container.innerHTML = '<div style="font-size:11px;color:var(--gray);font-style:italic;padding:4px 0">項目なし。「＋ 項目を追加」または「＋ 区分」で登録してください。</div>';
     return;
   }
-  container.innerHTML = editingChecklist.map((item, i) =>
-    `<div class="checklist-edit-item">
-      <span class="num">${i+1}.</span>
+  // 通常項目は区分内で 1, 2, 3 ... と連番で振る
+  let itemNo = 0;
+  container.innerHTML = editingChecklist.map((item, i) => {
+    if(item.type === 'section'){
+      itemNo = 0;
+      return `<div class="checklist-edit-item is-section">
+        <span class="sec-label">■ 区分</span>
+        <input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：開店前 / 補充 / 確認">
+        <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
+      </div>`;
+    }
+    itemNo++;
+    return `<div class="checklist-edit-item">
+      <span class="num">${itemNo}.</span>
       <input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：レジ点検">
       <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 }
 
 function addChecklistItemEditor(){
   editingChecklist.push({
     id: 'cl_' + Date.now() + '_' + editingChecklist.length,
     text: '',
-    checked: false
+    checked: false,
+    type: 'item'
   });
   renderChecklistEditor();
   // 新しい項目にフォーカス
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#m-checklist-items input[type=text]');
+    if(inputs.length) inputs[inputs.length - 1].focus();
+  }, 30);
+}
+
+function addChecklistSectionEditor(){
+  editingChecklist.push({
+    id: 'cl_sec_' + Date.now() + '_' + editingChecklist.length,
+    text: '',
+    checked: false,
+    type: 'section'
+  });
+  renderChecklistEditor();
   setTimeout(() => {
     const inputs = document.querySelectorAll('#m-checklist-items input[type=text]');
     if(inputs.length) inputs[inputs.length - 1].focus();
@@ -3143,7 +3181,8 @@ function openEditModal(taskId){
   editingChecklist = (Array.isArray(t.checklist) ? t.checklist : []).map(it => ({
     id: it.id || ('cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6)),
     text: it.text || '',
-    checked: !!it.checked
+    checked: !!it.checked,
+    type: it.type === 'section' ? 'section' : 'item'
   }));
   renderChecklistEditor();
   document.getElementById('m-del-btn').style.display = '';
@@ -3188,10 +3227,14 @@ function saveTask(){
   const carryPenaltyRaw = document.getElementById('m-carry-penalty').value;
   const carryPenaltyVal = parseInt(carryPenaltyRaw, 10);
   const carryPenaltyAmount = (Number.isFinite(carryPenaltyVal) && carryPenaltyVal > 0) ? carryPenaltyVal : null;
-  // 空項目を除外しつつチェックリストを保存
+  // 空項目を除外しつつチェックリストを保存（区分も text があれば残す）
   const checklist = editingChecklist
     .filter(i => (i.text || '').trim().length > 0)
-    .map(i => ({id: i.id, text: i.text.trim(), checked: !!i.checked}));
+    .map(i => {
+      const o = {id: i.id, text: i.text.trim(), checked: !!i.checked};
+      if(i.type === 'section') o.type = 'section';
+      return o;
+    });
 
   // 複数時刻：チェック済みの追加時刻（主時刻 sh は除外）
   const extraHours = Array.from(document.querySelectorAll('input[name=m-mtime]:checked'))
@@ -3589,9 +3632,9 @@ function toggleDone(taskId, ev){
       }
       return;
     }
-    // チェックリストがある場合、全項目チェック必須
-    if(Array.isArray(t.checklist) && t.checklist.length > 0){
-      const unchecked = t.checklist.filter(i => !i.checked).length;
+    // チェックリストがある場合、全項目チェック必須（区分は除外）
+    if(Array.isArray(t.checklist) && t.checklist.some(i => i.type !== 'section')){
+      const unchecked = t.checklist.filter(i => i.type !== 'section' && !i.checked).length;
       if(unchecked > 0){
         if(ev.target) ev.target.checked = false;
         alert(`先にチェックリストの未確認項目（${unchecked}件）にチェックを入れてください。`);
@@ -4417,8 +4460,9 @@ function renderChecklistView(){
   const t = found.task;
   document.getElementById('checklist-task-info').textContent = t.text || '(無題)';
   const items = Array.isArray(t.checklist) ? t.checklist : [];
-  const doneCount = items.filter(i => i.checked).length;
-  const total = items.length;
+  const realItems = items.filter(i => i.type !== 'section');
+  const doneCount = realItems.filter(i => i.checked).length;
+  const total = realItems.length;
   const allDone = total > 0 && doneCount === total;
 
   const warnEl = document.getElementById('checklist-warning');
@@ -4441,12 +4485,15 @@ function renderChecklistView(){
   if(items.length === 0){
     list.innerHTML = '<div style="text-align:center;color:var(--gray);padding:20px">項目はまだありません</div>';
   } else {
-    list.innerHTML = items.map((item, i) =>
-      `<label class="checklist-item ${item.checked ? 'done' : ''}">
+    list.innerHTML = items.map((item, i) => {
+      if(item.type === 'section'){
+        return `<div class="checklist-section-header">${escapeHtml(item.text || '')}</div>`;
+      }
+      return `<label class="checklist-item ${item.checked ? 'done' : ''}">
         <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleChecklistItem(${i})">
         <span>${escapeHtml(item.text)}</span>
-      </label>`
-    ).join('');
+      </label>`;
+    }).join('');
   }
 }
 
@@ -4845,13 +4892,14 @@ function renderTask(t, ctx){
     }
   }
 
-  // チェックリスト・マニュアル
+  // チェックリスト・マニュアル（区分は進捗カウント対象外）
   const hasManual = !!(t.manual && t.manual.trim());
-  const hasChecklist = Array.isArray(t.checklist) && t.checklist.length > 0;
+  const checklistRealItems = Array.isArray(t.checklist) ? t.checklist.filter(i => i.type !== 'section') : [];
+  const hasChecklist = checklistRealItems.length > 0;
   let checklistBadge = '';
   if(hasChecklist){
-    const cdone = t.checklist.filter(i => i.checked).length;
-    const ctotal = t.checklist.length;
+    const cdone = checklistRealItems.filter(i => i.checked).length;
+    const ctotal = checklistRealItems.length;
     const allDone = cdone === ctotal;
     checklistBadge = `<span class="checklist-progress ${allDone ? 'complete' : 'partial'}" onclick="openChecklistModal('${t.id}', event)" title="チェックリストを開く">📋 チェックリスト ${cdone}/${ctotal}${allDone ? ' ✓' : ''}</span>`;
   }
@@ -5298,9 +5346,10 @@ function renderFocusView(){
     const estBadgeFocus = (t.estimatedSeconds && t.estimatedSeconds > 0)
       ? `<div style="text-align:center;font-size:12px;color:#075985;font-weight:600">目安の作業時間 ${fmtTargetLabel(t.estimatedSeconds)}</div>`
       : '';
-    const hasChecklist = Array.isArray(t.checklist) && t.checklist.length > 0;
-    const cdone = hasChecklist ? t.checklist.filter(i => i.checked).length : 0;
-    const ctotal = hasChecklist ? t.checklist.length : 0;
+    const realItems = Array.isArray(t.checklist) ? t.checklist.filter(i => i.type !== 'section') : [];
+    const hasChecklist = realItems.length > 0;
+    const cdone = hasChecklist ? realItems.filter(i => i.checked).length : 0;
+    const ctotal = realItems.length;
     const checklistMini = hasChecklist
       ? `<div class="focus-card-checklist-mini ${cdone === ctotal ? 'done' : 'partial'}" style="color:${cdone===ctotal?'var(--green)':'var(--orange)'}">☑ ${cdone}/${ctotal}${cdone===ctotal?' 完了':''}</div>`
       : '';
@@ -6099,8 +6148,9 @@ function awardPointsForTask(staffName, t){
     pts += s.pointsNoCarryBonus;
     reasons.push(`+${s.pointsNoCarryBonus} 繰越なし`);
   }
-  // チェックリスト全クリアボーナス
-  if(Array.isArray(t.checklist) && t.checklist.length > 0 && t.checklist.every(c => c.checked) && (s.pointsChecklistBonus || 0) > 0){
+  // チェックリスト全クリアボーナス（区分は対象外）
+  const _bonusItems = Array.isArray(t.checklist) ? t.checklist.filter(c => c.type !== 'section') : [];
+  if(_bonusItems.length > 0 && _bonusItems.every(c => c.checked) && (s.pointsChecklistBonus || 0) > 0){
     pts += s.pointsChecklistBonus;
     reasons.push(`+${s.pointsChecklistBonus} チェック完了`);
   }
@@ -8305,13 +8355,14 @@ function renderStaffTaskCard(t){
     </div>`;
   }
 
-  // 詳細モード：操作可能
+  // 詳細モード：操作可能（区分は進捗カウント対象外）
   const hasManual = !!(t.manual && t.manual.trim());
-  const hasChecklist = Array.isArray(t.checklist) && t.checklist.length > 0;
+  const _realItems = Array.isArray(t.checklist) ? t.checklist.filter(i => i.type !== 'section') : [];
+  const hasChecklist = _realItems.length > 0;
   let checklistBadge = '';
   if(hasChecklist){
-    const cdone = t.checklist.filter(i => i.checked).length;
-    const ctotal = t.checklist.length;
+    const cdone = _realItems.filter(i => i.checked).length;
+    const ctotal = _realItems.length;
     const allDone = cdone === ctotal;
     checklistBadge = `<span class="checklist-progress ${allDone ? 'complete' : 'partial'}" onclick="openChecklistModal('${safeId}', event)">☑ ${cdone}/${ctotal}${allDone ? ' ✓' : ''}</span>`;
   }
