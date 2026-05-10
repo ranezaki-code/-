@@ -2482,6 +2482,17 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
       </div>
     </div>
     <div class="form-group">
+      <label>📍 同時間帯内の並び順 <span style="color:var(--gray);font-weight:400">(同じ時刻に複数タスクがある時)</span></label>
+      <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
+        同じ時間帯に他のタスクがある場合、どの位置に挿入するか。<br>
+        作成後はタイムライン上で <strong>▲▼ ボタン</strong> でも順番変更できます。
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px">
+        <label class="zone-chip"><input type="radio" name="m-order-pos" value="last" checked><span>📎 末尾に追加（デフォルト）</span></label>
+        <label class="zone-chip"><input type="radio" name="m-order-pos" value="first"><span>⬆ 先頭に追加</span></label>
+      </div>
+    </div>
+    <div class="form-group">
       <label>🕒 同じタスクを複数の時刻にも作成 <span style="color:var(--gray);font-weight:400">(任意)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
         定期業務(店内清掃を9時/12時/18時など)を一括作成。<br>
@@ -3052,6 +3063,8 @@ function openAddModal(hour, dateOverride){
   renderCategoryCheckboxes([]);
   renderZoneCheckboxes([]);
   renderMultiHourPicker(hour, []);
+  const orderLast = document.querySelector('input[name=m-order-pos][value=last]');
+  if(orderLast) orderLast.checked = true;
   document.getElementById('m-cat-new').value = '';
   document.getElementById('m-memo').value = '';
   document.getElementById('m-timer-min').value = '';
@@ -3163,6 +3176,19 @@ function saveTask(){
   const extraHours = Array.from(document.querySelectorAll('input[name=m-mtime]:checked'))
     .map(cb => parseInt(cb.value, 10))
     .filter(h => Number.isFinite(h) && h !== sh);
+  // 並び順位置：last=末尾 / first=先頭
+  const orderPosEl = document.querySelector('input[name=m-order-pos]:checked');
+  const orderPos = orderPosEl ? orderPosEl.value : 'last';
+  // 指定 hour に対する order を返す（先頭なら最小値-1、末尾なら最大値+1）
+  const orderForHour = (dKey, h) => {
+    if(orderPos === 'first'){
+      const minOrder = (state.tasks[dKey] || [])
+        .filter(x => x.hour === h)
+        .reduce((a, x) => Math.min(a, x.order ?? 999), 999);
+      return minOrder - 1;
+    }
+    return nextOrderInHour(dKey, h);
+  };
   // 共通：基本フィールド
   const baseFields = {
     text, hour: sh, min: sm,
@@ -3246,7 +3272,7 @@ function saveTask(){
           id: 't_' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000),
           done: false,
           carryOvers: [],
-          order: nextOrderInHour(newDateKey, h),
+          order: orderForHour(newDateKey, h),
           createdAt: new Date().toISOString(),
           hour: h
         }));
