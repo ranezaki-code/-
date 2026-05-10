@@ -3107,7 +3107,13 @@ function openEditModal(taskId){
   renderTanOptions(t.tan || 'both');
   renderCategoryCheckboxes(Array.isArray(t.cats) ? t.cats : []);
   renderZoneCheckboxes(Array.isArray(t.zones) ? t.zones : []);
-  renderMultiHourPicker(t.hour ?? 0, []);
+  // 編集時：同名・同日・同担当のタスクをまとめてグリッドに反映
+  const sameDay = (state.tasks[editingDateKey] || []);
+  const siblingHours = sameDay
+    .filter(x => (x.text || '') === (t.text || '') && (x.tan || 'both') === (t.tan || 'both') && x.id !== t.id)
+    .map(x => x.hour)
+    .filter(h => Number.isFinite(h) && h !== t.hour);
+  renderMultiHourPicker(t.hour ?? 0, siblingHours);
   document.getElementById('m-cat-new').value = '';
   document.getElementById('m-memo').value = t.memo || '';
   document.getElementById('m-timer-min').value = (t.timerSeconds && t.timerSeconds > 0) ? Math.round(t.timerSeconds / 60) : '';
@@ -3225,6 +3231,41 @@ function saveTask(){
       (t.checklist || []).forEach(c => { if(c.id) oldChecks[c.id] = !!c.checked; });
       t.checklist = checklist.map(c => ({...c, checked: c.id in oldChecks ? oldChecks[c.id] : c.checked}));
 
+      // 同名・同日・同担当のグループを extraHours に同期
+      // - グリッドで未チェックになった既存兄弟タスクは削除
+      // - 新規にチェックされた時刻のタスクは追加
+      // - 主時刻(sh)は除外
+      if(!isRecurring){
+        const targetKey = newDateKey;
+        if(!state.tasks[targetKey]) state.tasks[targetKey] = [];
+        const arr = state.tasks[targetKey];
+        const wantedHours = new Set(extraHours);
+        const existingSiblings = arr.filter(x => x.id !== t.id && (x.text || '') === text && (x.tan || 'both') === (tan || 'both'));
+        // 削除対象：既存だが wanted に含まれず、未完了のもの（完了/リタイア済みは履歴として残す）
+        const idsToRemove = existingSiblings
+          .filter(x => !wantedHours.has(x.hour))
+          .filter(x => !x.done && !x.retired)
+          .map(x => x.id);
+        if(idsToRemove.length > 0){
+          state.tasks[targetKey] = arr.filter(x => !idsToRemove.includes(x.id));
+        }
+        // 追加対象：wanted のうち、まだ存在しない時刻
+        const existingHours = new Set(state.tasks[targetKey]
+          .filter(x => (x.text || '') === text && (x.tan || 'both') === (tan || 'both'))
+          .map(x => x.hour));
+        wantedHours.forEach(h => {
+          if(!existingHours.has(h)){
+            state.tasks[targetKey].push(Object.assign({}, baseFields, {
+              id: 't_' + Date.now() + '_' + h + '_' + Math.floor(Math.random()*1000),
+              done: false,
+              carryOvers: [],
+              order: nextOrderInHour(targetKey, h),
+              createdAt: new Date().toISOString(),
+              hour: h
+            }));
+          }
+        });
+      }
       // 繰り返し設定の更新
       if(isRecurring){
         // 既にテンプレート紐付け済みなら更新、無ければ新規作成して紐付け
