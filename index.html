@@ -418,6 +418,8 @@ input[type=checkbox]{cursor:pointer;width:18px;height:18px}
 }
 .gacha-result{display:flex;flex-direction:column;align-items:center;animation:result-reveal .6s cubic-bezier(.34,1.56,.64,1)}
 @keyframes result-reveal{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}
+.gacha-kind-badge{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:900;color:#fff;padding:5px 14px;border-radius:14px;letter-spacing:1px;margin-bottom:8px;border:2px solid rgba(255,255,255,.4);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.gacha-kind-desc{font-size:11px;color:rgba(255,255,255,.85);margin-top:6px;font-weight:600;letter-spacing:.5px;text-shadow:0 1px 3px rgba(0,0,0,.5)}
 .gacha-result-rarity{font-size:18px;font-weight:900;letter-spacing:3px;margin-bottom:6px;text-shadow:0 0 12px currentColor}
 .gacha-result-icon{font-size:120px;filter:drop-shadow(0 0 30px currentColor);animation:wobble 1.5s ease-in-out infinite}
 .gacha-result-name{color:#fff;font-size:24px;font-weight:900;margin-top:10px;text-shadow:0 2px 6px rgba(0,0,0,.5)}
@@ -6349,11 +6351,20 @@ function showGachaAnimation(item, onClose){
     const rarClass = rarity === 'super' ? 'rar-super' : rarity === 'legendary' ? 'rar-legendary' : rarity === 'rare' ? 'rar-rare' : 'rar-common';
     const resultClass = 'r-' + rarity;
     const stage = ov.querySelector('#gacha-stage');
+    // カテゴリラベル: アイテム / スタンプ / ごはん
+    const kindMeta = {
+      item:  {label:'コンビニ図鑑',  emoji:'📚', desc:'コレクション(集めるだけ)',                bg:'#3b82f6'},
+      stamp: {label:'感謝スタンプ',  emoji:'💌', desc:'感謝タブで他の人に送れる',                bg:'#7c3aed'},
+      food:  {label:'ねこのごはん',  emoji:'🍱', desc:'みんなのペットにあげると進化pt',          bg:'#ec4899'}
+    };
+    const km = kindMeta[item._kind] || {label:'アイテム', emoji:'🎁', desc:'', bg:'#6b7280'};
     stage.innerHTML = `
       <div class="gacha-result ${resultClass}">
+        <div class="gacha-kind-badge" style="background:${km.bg}">${km.emoji} ${km.label}</div>
         <div class="gacha-result-rarity ${rarClass}">★ ${rarLabel} ★</div>
         <div class="gacha-result-icon" style="color:${RARITY_COLORS[rarity]}">${item.icon}</div>
         <div class="gacha-result-name">${escapeHtml(item.name)}</div>
+        ${km.desc ? `<div class="gacha-kind-desc">${km.desc}</div>` : ''}
       </div>
     `;
     // 閉じるボタンを追加
