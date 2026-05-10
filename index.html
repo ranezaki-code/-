@@ -3213,6 +3213,10 @@ function saveTask(){
     const oldKey = editingDateKey;
     const t = (state.tasks[oldKey] || []).find(x => x.id === editingTaskId);
     if(t){
+      // 旧値を保持（リネーム時に兄弟を見つけるため）
+      const oldText = t.text || '';
+      const oldTan = t.tan || 'both';
+      const oldRtId = t.recurringTaskId;
       // 日付変更があれば移動（単発モードのみ意味がある）
       if(!isRecurring && newDateKey !== oldKey){
         state.tasks[oldKey] = state.tasks[oldKey].filter(x => x.id !== editingTaskId);
@@ -3224,83 +3228,128 @@ function saveTask(){
       }
       // インスタンスを更新
       Object.assign(t, baseFields);
-      // タイマー設定が変わったら起動状態をリセット
-      if(t.timerSeconds !== timerSeconds){
-        delete t.timerStartedAt;
-      }
-      // チェックリストの既存チェック状態を可能な限り維持
+      if(t.timerSeconds !== timerSeconds){ delete t.timerStartedAt; }
       const oldChecks = {};
       (t.checklist || []).forEach(c => { if(c.id) oldChecks[c.id] = !!c.checked; });
       t.checklist = checklist.map(c => ({...c, checked: c.id in oldChecks ? oldChecks[c.id] : c.checked}));
 
-      // 同名・同日・同担当のグループ全体を同期
-      // - 既存兄弟タスクの内容も最新の baseFields で更新（hour と進行状態は維持）
-      // - グリッドで未チェックになった兄弟（未完了）は削除
-      // - 新規にチェックされた時刻のタスクは追加
+      // ヘルパー: 兄弟タスクを最新内容で更新（進行状態は維持）
+      const updateSibling = (x) => {
+        const keepHour = x.hour, keepMin = x.min;
+        const keepProgress = {done: x.done, completedBy: x.completedBy, completedAt: x.completedAt, retired: x.retired, retiredBy: x.retiredBy, retiredReason: x.retiredReason, retiredAt: x.retiredAt, skipped: x.skipped, skippedBy: x.skippedBy, skippedReason: x.skippedReason, skippedAt: x.skippedAt, carryOvers: x.carryOvers, startedAt: x.startedAt, timerStartedAt: x.timerStartedAt, recurringTaskId: x.recurringTaskId};
+        const oc = {};
+        (x.checklist || []).forEach(c => { if(c.id) oc[c.id] = !!c.checked; });
+        Object.assign(x, baseFields, {hour: keepHour, min: keepMin, ...keepProgress});
+        x.checklist = checklist.map(c => ({...c, checked: c.id in oc ? oc[c.id] : c.checked}));
+      };
+
       if(!isRecurring){
+        // 単発タスクのグループ同期（OLD text/tan で兄弟特定 → リネームしても繋がる）
         const targetKey = newDateKey;
         if(!state.tasks[targetKey]) state.tasks[targetKey] = [];
         const arr = state.tasks[targetKey];
         const wantedHours = new Set(extraHours);
-        const existingSiblings = arr.filter(x => x.id !== t.id && (x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'));
-        // 削除対象：未チェック かつ 未処理のもの
+        const existingSiblings = arr.filter(x => x.id !== t.id && (x.text || '') === oldText && (x.tan || 'both') === oldTan);
         const idsToRemove = existingSiblings
           .filter(x => !wantedHours.has(x.hour) && !x.done && !x.retired && !x.skipped)
           .map(x => x.id);
         if(idsToRemove.length > 0){
           state.tasks[targetKey] = arr.filter(x => !idsToRemove.includes(x.id));
         }
-        // 残った兄弟の内容を baseFields で更新（hour と進行状態は維持）
+        // 残った兄弟を更新
         state.tasks[targetKey].forEach(x => {
-          if(x.id === t.id) return; // 編集中本体はもう Object.assign 済み
-          if(!((x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'))) return;
-          if(!wantedHours.has(x.hour)) return; // チェック済の兄弟だけ
-          const keepHour = x.hour;
-          const keepMin = x.min;
-          const keepProgress = {done: x.done, completedBy: x.completedBy, completedAt: x.completedAt, retired: x.retired, retiredBy: x.retiredBy, retiredReason: x.retiredReason, retiredAt: x.retiredAt, skipped: x.skipped, skippedBy: x.skippedBy, skippedReason: x.skippedReason, skippedAt: x.skippedAt, carryOvers: x.carryOvers, startedAt: x.startedAt, timerStartedAt: x.timerStartedAt};
-          // チェックリストの既存チェック状態を可能な限り維持
-          const oldChecks = {};
-          (x.checklist || []).forEach(c => { if(c.id) oldChecks[c.id] = !!c.checked; });
-          Object.assign(x, baseFields, {hour: keepHour, min: keepMin, ...keepProgress});
-          x.checklist = checklist.map(c => ({...c, checked: c.id in oldChecks ? oldChecks[c.id] : c.checked}));
+          if(x.id === t.id) return;
+          if(!((x.text || '') === oldText && (x.tan || 'both') === oldTan)) return;
+          if(!wantedHours.has(x.hour)) return;
+          updateSibling(x);
         });
-        // 追加対象：wanted のうち、まだ存在しない時刻
+        // 追加
         const existingHours = new Set(state.tasks[targetKey]
-          .filter(x => (x.text || '') === t.text && (x.tan || 'both') === (t.tan || 'both'))
+          .filter(x => (x.text || '') === text && (x.tan || 'both') === (tan || 'both'))
           .map(x => x.hour));
         wantedHours.forEach(h => {
           if(!existingHours.has(h)){
             state.tasks[targetKey].push(Object.assign({}, baseFields, {
               id: 't_' + Date.now() + '_' + h + '_' + Math.floor(Math.random()*1000),
-              done: false,
-              carryOvers: [],
+              done: false, carryOvers: [],
               order: nextOrderInHour(targetKey, h),
               createdAt: new Date().toISOString(),
               hour: h
             }));
           }
         });
-      }
-      // 繰り返し設定の更新
-      if(isRecurring){
-        // 既にテンプレート紐付け済みなら更新、無ければ新規作成して紐付け
-        let rt = (state.recurringTasks || []).find(x => x.id === t.recurringTaskId);
-        if(!rt){
-          rt = {
-            id: 'rt_' + Date.now() + '_' + Math.floor(Math.random()*1000),
-            createdAt: new Date().toISOString()
-          };
-          if(!Array.isArray(state.recurringTasks)) state.recurringTasks = [];
-          state.recurringTasks.push(rt);
-          t.recurringTaskId = rt.id;
-        }
-        Object.assign(rt, baseFields);
-        rt.recurringDows = selectedDows.slice();
-      } else {
-        // 繰り返し解除：テンプレートを削除（このインスタンスは残す）
-        if(t.recurringTaskId){
-          state.recurringTasks = (state.recurringTasks || []).filter(x => x.id !== t.recurringTaskId);
+        // 繰り返しを解除（あれば）
+        if(oldRtId){
+          state.recurringTasks = (state.recurringTasks || []).filter(x => x.id !== oldRtId);
           delete t.recurringTaskId;
+        }
+      } else {
+        // 繰り返しタスクの編集（テンプレート群とインスタンス群を同期）
+        if(!Array.isArray(state.recurringTasks)) state.recurringTasks = [];
+        const newDowsKey = selectedDows.slice().sort().join(',');
+        const oldRt = state.recurringTasks.find(x => x.id === oldRtId);
+        const oldDowsKey = oldRt ? (oldRt.recurringDows||[]).slice().sort().join(',') : newDowsKey;
+        // OLD グループ（同名・同担当・同曜日パターン）のテンプレート集合
+        const groupTpls = state.recurringTasks.filter(x =>
+          (x.text || '') === oldText &&
+          (x.tan || 'both') === oldTan &&
+          (x.recurringDows||[]).slice().sort().join(',') === oldDowsKey
+        );
+        const wantedHours = new Set([sh, ...extraHours]);
+        // 削除対象テンプレート: グループ内 で wanted ではない hour
+        const tplsToRemove = groupTpls.filter(rt => !wantedHours.has(rt.hour));
+        const removedIds = new Set(tplsToRemove.map(rt => rt.id));
+        // 残るテンプレート（自分を含む）を新内容で更新
+        groupTpls.filter(rt => !removedIds.has(rt.id)).forEach(rt => {
+          const keepHour = (rt.id === oldRtId) ? sh : rt.hour;
+          Object.assign(rt, baseFields, {hour: keepHour, recurringDows: selectedDows.slice()});
+        });
+        // 編集中タスクのテンプレートを確保
+        let mainRt = state.recurringTasks.find(x => x.id === oldRtId);
+        if(!mainRt){
+          mainRt = {id: 'rt_' + Date.now() + '_' + Math.floor(Math.random()*1000), createdAt: new Date().toISOString()};
+          state.recurringTasks.push(mainRt);
+          t.recurringTaskId = mainRt.id;
+        }
+        Object.assign(mainRt, baseFields, {hour: sh, recurringDows: selectedDows.slice()});
+        // 追加: wanted のうち、まだ無い hour
+        const existingHours = new Set(state.recurringTasks
+          .filter(rt => (rt.text || '') === text && (rt.tan || 'both') === (tan || 'both') && (rt.recurringDows||[]).slice().sort().join(',') === newDowsKey)
+          .map(rt => rt.hour));
+        wantedHours.forEach(h => {
+          if(!existingHours.has(h)){
+            state.recurringTasks.push(Object.assign({}, baseFields, {
+              id: 'rt_' + Date.now() + '_' + h + '_' + Math.floor(Math.random()*1000),
+              createdAt: new Date().toISOString(),
+              recurringDows: selectedDows.slice(),
+              hour: h
+            }));
+          }
+        });
+        // 削除テンプレートのインスタンスを片付け（未処理のみ）
+        if(removedIds.size > 0){
+          state.recurringTasks = state.recurringTasks.filter(rt => !removedIds.has(rt.id));
+          Object.keys(state.tasks || {}).forEach(dk => {
+            state.tasks[dk] = (state.tasks[dk] || []).filter(x =>
+              !(x.recurringTaskId && removedIds.has(x.recurringTaskId) && !x.done && !x.retired && !x.skipped)
+            );
+          });
+        }
+        // 既存インスタンス（全日）の未処理を最新内容で更新
+        const groupTplIds = new Set(state.recurringTasks
+          .filter(rt => (rt.text || '') === text && (rt.tan || 'both') === (tan || 'both') && (rt.recurringDows||[]).slice().sort().join(',') === newDowsKey)
+          .map(rt => rt.id));
+        Object.keys(state.tasks || {}).forEach(dk => {
+          (state.tasks[dk] || []).forEach(x => {
+            if(!x.recurringTaskId || !groupTplIds.has(x.recurringTaskId)) return;
+            if(x.done || x.retired || x.skipped) return;
+            if(x.id === t.id) return; // 編集中本体は更新済み
+            updateSibling(x);
+          });
+        });
+        // 当日の未生成テンプレートを materialize
+        if(typeof materializeRecurringForDate === 'function'){
+          try{ materializeRecurringForDate(currentDate); }catch(e){}
         }
       }
     }
