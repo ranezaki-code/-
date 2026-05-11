@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'b063b24'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -5072,8 +5072,10 @@ function renderTask(t, ctx){
     if(t.waitingActive) cls.push('is-waiting-active'); else cls.push('is-waiting-standby');
   }
   // 予定時刻を超過している未処理タスクを警告表示（表示中の日が今日のときのみ）
+  // 待機中（発動前）のタスクは時刻超過警告を出さない（予定時刻はあくまで目安）
   let isOverdue = false;
-  if(!t.done && !t.retired && !t.skipped && carryOvers.length === 0 && t.hour != null){
+  const isWaitingStandby = t.waiting && !t.waitingActive;
+  if(!t.done && !t.retired && !t.skipped && carryOvers.length === 0 && t.hour != null && !isWaitingStandby){
     const now = new Date();
     const viewing = (typeof currentDate !== 'undefined') ? currentDate : now;
     if(dateKey(viewing) === dateKey(now)){
