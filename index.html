@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '5.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '5.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'bdc08f7'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -9703,6 +9703,26 @@ function renderTaskList(){
   });
   // 各グループ内を時刻順
   groups.forEach(g => g.items.sort((a,b) => (a.hour ?? 0) - (b.hour ?? 0) || (a.min ?? 0) - (b.min ?? 0)));
+  // 繰り返しグループは、現在の繰り返しテンプレートの時間枠だけを集計（過去インスタンスの履歴は除外）
+  groups.forEach(g => {
+    if(!g.isRecur) return;
+    const realHours = new Set();
+    (state.recurringTasks || []).forEach(rt => {
+      if((rt.text || '').trim() !== g.text) return;
+      if((rt.tan || 'both') !== g.tan) return;
+      const rtDows = (rt.recurringDows || []).slice().sort().join(',');
+      const expectedDows = (() => {
+        // g.key の末尾が dowsKey
+        const parts = g.key.split('|');
+        return parts[parts.length - 1];
+      })();
+      if(rtDows !== expectedDows) return;
+      if(rt.hour != null) realHours.add(rt.hour);
+    });
+    if(realHours.size > 0){
+      g.hourSet = realHours;
+    }
+  });
 
   // 統計表示
   document.getElementById('tl-stat').textContent =
