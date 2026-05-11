@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '5.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '5.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '06bd5dc'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -4813,7 +4813,9 @@ function setTaskWaitingState(taskId, newState, ev){
       t.originalMin = t.min ?? 0;
     }
     t.hour = now.getHours();
-    t.min = 0;
+    t.min = now.getMinutes();
+    // タイマー開始（推定時間／目標時間タイマーが設定されていれば）
+    if(t.timerSeconds && t.timerSeconds > 0) t.timerStartedAt = t.waitingActivatedAt;
     // 新しい時間枠の末尾に並び替え
     try{
       if(typeof nextOrderInHour === 'function' && dKey){
@@ -4837,6 +4839,7 @@ function setTaskWaitingState(taskId, newState, ev){
     t.waitingActive = false;
     delete t.waitingActivatedAt;
     delete t.startedAt;
+    delete t.timerStartedAt;
     // 元の予定時刻に戻す
     if(t.originalHour != null){
       t.hour = t.originalHour;
