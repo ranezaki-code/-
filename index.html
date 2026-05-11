@@ -2537,16 +2537,10 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         <div style="font-size:11px;color:var(--gray);margin-top:4px">↑ 上の曜日を全部クリアしてからこの日付に1回だけ作成されます</div>
       </details>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>開始時刻</label>
-        <input type="time" id="m-time-start">
-      </div>
-      <div class="form-group">
-        <label>終了時刻 <span style="color:var(--gray);font-weight:400">(任意)</span></label>
-        <input type="time" id="m-time-end">
-      </div>
-    </div>
+    <!-- 開始時刻・終了時刻は廃止。hour は「+」を押した時間枠 or 編集前タスクから引き継ぐ。
+         互換のため hidden input として残置（saveTask/openEditModal の既存ロジックを変更せず動かす） -->
+    <input type="hidden" id="m-time-start">
+    <input type="hidden" id="m-time-end">
     <div class="form-group">
       <label>📍 同時間帯内の並び順 <span style="color:var(--gray);font-weight:400">(同じ時刻に複数タスクがある時)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
@@ -2562,8 +2556,8 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
       <label>🕒 同じタスクを複数の時刻にも作成 <span style="color:var(--gray);font-weight:400">(任意)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
         定期業務(店内清掃を9時/12時/18時など)を一括作成。<br>
-        選択した時刻ごとに同じ内容のタスクが <strong>独立して作成</strong> されます(分は上の開始時刻と同じ)。<br>
-        <strong>未選択なら通常通り上の時刻だけ</strong>に作成されます。
+        選択した時刻ごとに同じ内容のタスクが <strong>独立して作成</strong> されます。<br>
+        <strong>未選択なら、現在表示されている時間枠だけ</strong>に作成されます。
       </div>
       <div id="m-times-multi" class="hour-multi"></div>
     </div>
@@ -2695,7 +2689,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'a28c44e'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
