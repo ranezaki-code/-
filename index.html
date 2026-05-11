@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'f6e8391'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -5128,8 +5128,10 @@ function renderTask(t, ctx){
     }).join('');
   }
 
-  // 順序番号バッジ（繰り越しゾーンでは表示しない＝元の順番が崩れるのを避ける）
-  const orderBadge = ctx.isCarry ? '' : `<span class="order-badge">${(ctx.index ?? 0) + 1}</span>`;
+  // 順序番号バッジ（同枠に2つ以上ある時のみ表示。1つだけなら不要・混乱の原因）
+  // 繰り越しゾーンでは表示しない（元の順番が崩れるのを避ける）
+  const showOrderBadge = !ctx.isCarry && (ctx.total ?? 1) > 1;
+  const orderBadge = showOrderBadge ? `<span class="order-badge">${(ctx.index ?? 0) + 1}</span>` : '';
 
   // 並び替えボタン
   const upDisabled = (ctx.index ?? 0) === 0 ? 'disabled' : '';
