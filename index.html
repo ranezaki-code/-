@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '59e3a01'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -5198,7 +5198,7 @@ function renderTask(t, ctx){
       const oc = dKey ? checkOrderRestriction(t, dKey) : {ok:true};
       if(!oc.ok){
         const reasonText = oc.reason === 'past-pending' ? `先に ${oc.blockingTask} を処理してください` : `先に「${oc.blockingTask}」を完了してください`;
-        startEl = `<button class="task-start-btn task-start-blocked" onclick="startTask('${t.id}', event)" title="${escapeHtml(reasonText)}">🔒 待機中</button>`;
+        startEl = `<button class="task-start-btn task-start-blocked" onclick="startTask('${t.id}', event)" title="${escapeHtml(reasonText)}">🔒 順番待ち</button>`;
       } else {
         startEl = `<button class="task-start-btn" onclick="startTask('${t.id}', event)">▶ 開始</button>`;
       }
