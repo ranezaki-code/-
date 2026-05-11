@@ -1736,8 +1736,8 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="header">
     <h1>📋 ワークスケジュール</h1>
     <button id="admin-toggle" onclick="toggleAdminMode()" title="クリックで管理者モードに切り替え">🔒 従業員</button>
-    <button id="manual-push-btn" onclick="manualPushNow()" title="今すぐクラウド（Gist）に保存" style="background:#16a34a;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">💾 最新を保存</button>
-    <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウド（Gist）から最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">🔄 最新を反映</button>
+    <button id="manual-push-btn" onclick="manualPushNow()" title="今の編集をクラウドに送信" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;margin-left:6px;box-shadow:0 2px 4px rgba(22,163,74,.3)">💾 最新を保存</button>
+    <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウドから最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;margin-left:4px;box-shadow:0 2px 4px rgba(79,70,229,.3)">🔄 最新を反映</button>
     <span class="sync-badge" id="sync-badge" onclick="openSyncModal()" title="クリックで同期設定">⚪ 未設定</span>
   </div>
 
@@ -1999,14 +1999,18 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn-primary" onclick="exportDataToFile()" style="background:#16a34a">💾 データをファイルに保存（手動バックアップ）</button>
           <button class="btn-secondary" onclick="importDataFromFile()" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">📂 ファイルから復元</button>
-          <button class="btn-secondary" onclick="idbRestoreLatest()" style="background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe">🗄 IndexedDB から復元</button>
-          <button class="btn-secondary" onclick="forcePullFromGist()" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700">🆘 Gistから強制取得</button>
-          <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">🔍 データ復旧センター</button>
-          <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
-          <button class="btn-secondary" onclick="viewOpLog()" style="background:#e5e7eb;color:#1f2937">📊 操作ログを見る（原因究明用）</button>
-          <button class="btn-primary" onclick="loadSampleData()">📥 サンプルデータを読み込む</button>
-          <button class="btn-danger" onclick="clearAllData()">🗑 すべてのデータを削除</button>
         </div>
+        <details style="margin-top:8px">
+          <summary style="font-size:12px;color:var(--gray);cursor:pointer;padding:4px 0">▸ 緊急時の復旧オプション</summary>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding:8px;background:#f8fafc;border-radius:6px">
+            <button class="btn-secondary" onclick="idbRestoreLatest()" style="background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe;font-size:12px;padding:6px 10px">🗄 IndexedDB から復元</button>
+            <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;font-size:12px;padding:6px 10px">🔍 データ復旧センター</button>
+            <button class="btn-secondary" onclick="restoreLastAutobackup()" style="font-size:12px;padding:6px 10px">⏪ 直前の自動バックアップ</button>
+            <button class="btn-secondary" onclick="viewOpLog()" style="background:#e5e7eb;color:#1f2937;font-size:12px;padding:6px 10px">📊 操作ログ</button>
+            <button class="btn-primary" onclick="loadSampleData()" style="font-size:12px;padding:6px 10px">📥 サンプルデータ</button>
+            <button class="btn-danger" onclick="clearAllData()" style="font-size:12px;padding:6px 10px">🗑 すべて削除</button>
+          </div>
+        </details>
       </div>
 
       <div class="dash-card">
@@ -2694,7 +2698,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'f47b31f'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
