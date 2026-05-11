@@ -2688,7 +2688,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'a4b4d94'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -3087,6 +3087,8 @@ function addCategoryInModal(){
 
 /* タスク編集モーダル内で編集中のチェックリスト一時データ */
 let editingChecklist = [];
+/* モーダルを開いた時の「主時刻」: 保存時 sh を決める際の優先候補（チェック済みならこれを使う） */
+let editingPrimaryHour = null;
 
 function renderChecklistEditor(){
   const container = document.getElementById('m-checklist-items');
@@ -3187,6 +3189,7 @@ function openAddModal(hour, dateOverride){
   renderTanOptions('both');
   renderCategoryCheckboxes([]);
   renderZoneCheckboxes([]);
+  editingPrimaryHour = hour;
   renderMultiHourPicker(hour, []);
   const orderLast = document.querySelector('input[name=m-order-pos][value=last]');
   if(orderLast) orderLast.checked = true;
@@ -3238,6 +3241,7 @@ function openEditModal(taskId){
     .filter(x => (x.text || '') === (t.text || '') && (x.tan || 'both') === (t.tan || 'both') && x.id !== t.id)
     .map(x => x.hour)
     .filter(h => Number.isFinite(h) && h !== t.hour);
+  editingPrimaryHour = t.hour ?? 0;
   renderMultiHourPicker(t.hour ?? 0, siblingHours);
   document.getElementById('m-cat-new').value = '';
   document.getElementById('m-memo').value = t.memo || '';
@@ -3280,7 +3284,9 @@ function saveTask(){
     alert('時間枠を少なくとも1つ選んでください');
     return;
   }
-  const sh = checkedHours[0];
+  // 主時刻: モーダルを開いた時の hour がまだチェック済みならそれを優先（編集時の hour ズレ防止）
+  const sh = (editingPrimaryHour != null && checkedHours.includes(editingPrimaryHour))
+    ? editingPrimaryHour : checkedHours[0];
   const sm = 0;
   let eh = null, em = null;
   const tan = document.getElementById('m-tan').value || 'both';
