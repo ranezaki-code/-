@@ -2698,7 +2698,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
     <div class="form-group">
       <label>🕐 待機モード <span style="color:var(--gray);font-weight:400">(任意)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
-        納品など、開始時刻が読めないタスク向け。設定すると、タイムラインで <strong>「待機中」</strong> のグレー表示になり、<strong>「▶ 発動」</strong> ボタンが付きます。届いた／始まった時に押すと、赤い枠で「今すぐやる」状態になります。
+        納品など、開始時刻が読めないタスク向け。設定すると、タイムラインで <strong>「⏱ 待機中」</strong> のグレー表示になり、<strong>「▶ 着手」</strong> ボタンが付きます。届いた／始まった時に押すと、赤い枠で「今すぐやる」状態に変わり、同時にタスクが開始されます。
       </div>
       <label class="zone-chip"><input type="checkbox" id="m-waiting"><span>🕐 待機モードで作成（発動を待つ）</span></label>
     </div>
@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'fcb1956'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -4781,7 +4781,7 @@ document.getElementById('complete-modal').addEventListener('click', e => {
 });
 
 /* ========== 描画 ========== */
-/* 待機モードの状態切替（standby ↔ active） */
+/* 待機モードの状態切替（standby → active で同時に開始、active → standby で開始も取消） */
 function setTaskWaitingState(taskId, newState, ev){
   if(ev){ ev.stopPropagation(); ev.preventDefault(); }
   const found = findTaskByIdAnyDate(taskId);
@@ -4790,9 +4790,13 @@ function setTaskWaitingState(taskId, newState, ev){
   if(newState === 'active'){
     t.waitingActive = true;
     t.waitingActivatedAt = new Date().toISOString();
+    // 同時にタスクを「開始」状態へ（startedAt をセット）
+    if(!t.startedAt) t.startedAt = t.waitingActivatedAt;
   } else {
     t.waitingActive = false;
     delete t.waitingActivatedAt;
+    // 開始時刻も取り消す（着手をやっぱり取り消す動作）
+    delete t.startedAt;
   }
   saveState();
   refreshCurrentView();
@@ -5151,10 +5155,10 @@ function renderTask(t, ctx){
   let waitingBadge = '';
   if(t.waiting && !t.done && !t.retired && !t.skipped){
     if(t.waitingActive){
-      waitingBtn = `<button class="task-icon-btn" style="background:#fff;color:#dc2626;border:1.5px solid #dc2626;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'standby', event)" title="待機状態に戻す">↩ 待機に戻す</button>`;
+      waitingBtn = `<button class="task-icon-btn" style="background:#fff;color:#dc2626;border:1.5px solid #dc2626;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'standby', event)" title="着手をやめて待機に戻す">↩ 着手を取消</button>`;
       waitingBadge = `<span class="badge-waiting-active">🔥 最優先・今すぐ</span>`;
     } else {
-      waitingBtn = `<button class="task-icon-btn" style="background:#dc2626;color:#fff;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'active', event)" title="届いた／始まった時に押す">▶ 発動</button>`;
+      waitingBtn = `<button class="task-icon-btn" style="background:#dc2626;color:#fff;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'active', event)" title="届いた／始まった時に押す（着手＝開始も同時に実行）">▶ 着手</button>`;
       waitingBadge = `<span class="badge-waiting-standby">🕐 待機中</span>`;
     }
   }
@@ -5190,17 +5194,23 @@ function renderTask(t, ctx){
     : '';
 
   // 開始ボタン or 進行中バッジ
+  // 待機モード（standby）の場合、通常の「▶ 開始」は出さない（「▶ 着手」が代わり）
   let startEl = '';
   if(!t.done && !t.retired && !t.skipped){
     if(!t.startedAt){
-      // 順番チェック：開始不可なら視覚的に無効化
-      const dKey = ctx.dateKey || (typeof currentDate !== 'undefined' ? dateKey(currentDate) : null);
-      const oc = dKey ? checkOrderRestriction(t, dKey) : {ok:true};
-      if(!oc.ok){
-        const reasonText = oc.reason === 'past-pending' ? `先に ${oc.blockingTask} を処理してください` : `先に「${oc.blockingTask}」を完了してください`;
-        startEl = `<button class="task-start-btn task-start-blocked" onclick="startTask('${t.id}', event)" title="${escapeHtml(reasonText)}">🔒 順番待ち</button>`;
+      if(t.waiting && !t.waitingActive){
+        // 待機中：開始ボタン非表示（着手ボタンが代行）
+        startEl = '';
       } else {
-        startEl = `<button class="task-start-btn" onclick="startTask('${t.id}', event)">▶ 開始</button>`;
+        // 順番チェック：開始不可なら視覚的に無効化
+        const dKey = ctx.dateKey || (typeof currentDate !== 'undefined' ? dateKey(currentDate) : null);
+        const oc = dKey ? checkOrderRestriction(t, dKey) : {ok:true};
+        if(!oc.ok){
+          const reasonText = oc.reason === 'past-pending' ? `先に ${oc.blockingTask} を処理してください` : `先に「${oc.blockingTask}」を完了してください`;
+          startEl = `<button class="task-start-btn task-start-blocked" onclick="startTask('${t.id}', event)" title="${escapeHtml(reasonText)}">🔒 順番待ち</button>`;
+        } else {
+          startEl = `<button class="task-start-btn" onclick="startTask('${t.id}', event)">▶ 開始</button>`;
+        }
       }
     } else {
       const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
