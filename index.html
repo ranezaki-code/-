@@ -1441,7 +1441,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 .hour-chip input{display:none}
 .hour-chip:hover{border-color:var(--main);background:var(--main-lt);color:var(--main)}
 .hour-chip:has(input:checked){border-color:var(--main);background:var(--main);color:#fff;font-weight:900}
-.hour-chip.is-primary{border-color:#f59e0b;background:#fef3c7;color:#7c2d12;font-weight:800;cursor:default}
+.hour-chip.is-primary{cursor:default;opacity:.5}
 .fz-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
 /* === QSC セクション + 横長行 === */
 .fr-section{margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff}
@@ -2688,7 +2688,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'bca116b'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
