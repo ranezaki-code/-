@@ -1223,7 +1223,6 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .task-item.queued:hover{opacity:1}
 /* 順番待ちタスクの開始ボタンは視覚的にも待機状態を示す */
 .task-item.queued .task-start-btn{background:linear-gradient(135deg,#94a3b8,#64748b);box-shadow:0 1px 3px rgba(100,116,139,.35);position:relative}
-.task-item.queued .task-start-btn::after{content:'順番待ち';position:absolute;top:-7px;right:-4px;background:#f59e0b;color:#fff;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:800;letter-spacing:.3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 
 /* 順序操作ボタン */
 .task-icon-btn.up,.task-icon-btn.down{font-size:14px;line-height:1;padding:1px 4px}
@@ -2742,7 +2741,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '5.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '5.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '12b2d51'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
