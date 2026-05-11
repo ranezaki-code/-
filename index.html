@@ -2001,6 +2001,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
           <button class="btn-secondary" onclick="forcePullFromGist()" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700">🆘 Gistから強制取得</button>
           <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">🔍 データ復旧センター</button>
           <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
+          <button class="btn-secondary" onclick="viewOpLog()" style="background:#e5e7eb;color:#1f2937">📊 操作ログを見る（原因究明用）</button>
           <button class="btn-primary" onclick="loadSampleData()">📥 サンプルデータを読み込む</button>
           <button class="btn-danger" onclick="clearAllData()">🗑 すべてのデータを削除</button>
         </div>
@@ -2691,7 +2692,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '94cb415'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10356,6 +10357,7 @@ function loadSampleData(){
 }
 
 function clearAllData(){
+  logOp('clearAllData_BUTTON_CLICKED', {});
   if(!confirm('⚠️ すべてのデータを削除します。\n\n・タスク（過去・未来・繰り返し）\n・従業員一覧\n・カテゴリ\n・プリセット\n・ゲームプロフィール（ポイント・称号・アイテム）\n\nこの操作は取り消せません。本当に削除しますか？')) return;
   if(!confirm('最終確認です。\n本当にすべてのデータを削除してよろしいですか？')) return;
   // 安全装置：「削除」と入力しない限り続行しない
@@ -10374,6 +10376,7 @@ function clearAllData(){
       while(keys.length > 3){ localStorage.removeItem(keys.shift()); }
     }
   }catch(e){ console.warn('autobackup failed', e); }
+  logOp('clearAllData_EXECUTED', {});
   localStorage.removeItem(STORAGE_KEY);
   // セッション/同期情報は維持
   state = loadState();
@@ -10430,6 +10433,34 @@ function restoreLastAutobackup(){
   alert('復元しました。再読み込みします。');
   location.reload();
 }
+
+/* ========== データ操作ログ（消失の原因究明のため、全操作を記録） ========== */
+const OP_LOG_KEY = 'ws_v1_oplog';
+const OP_LOG_MAX = 500; // 直近500件のみ保持
+function logOp(event, info){
+  try{
+    const log = JSON.parse(localStorage.getItem(OP_LOG_KEY) || '[]');
+    log.push({
+      t: new Date().toISOString(),
+      event,
+      info: info || {},
+      stack: (new Error()).stack?.split('\n').slice(2, 5).join(' | ') // 呼び出し元3階層
+    });
+    while(log.length > OP_LOG_MAX) log.shift();
+    localStorage.setItem(OP_LOG_KEY, JSON.stringify(log));
+  }catch(_){}
+}
+function viewOpLog(){
+  const log = JSON.parse(localStorage.getItem(OP_LOG_KEY) || '[]');
+  if(log.length === 0){ alert('操作ログがありません'); return; }
+  const text = log.map(e => `[${e.t.slice(11,19)}] ${e.event}: ${JSON.stringify(e.info)}`).join('\n');
+  // 新しいタブで表示
+  const blob = new Blob([text], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+// 主要なイベントに記録を仕込む（既存関数を後でラップ）
 
 /* ========== IndexedDB 二重保存（localStorage が消えても残る別ストレージ） ========== */
 const IDB_DB = 'ws_backup_db';
@@ -10883,6 +10914,17 @@ async function gistPull(silent){
         return false;
       }
     }catch(e){ /* JSON 不正なら通常通り取り込む */ }
+    // 操作ログ: pullで上書き発生
+    try{
+      const localBefore = localStorage.getItem(STORAGE_KEY);
+      let localTasks = 0, remoteTasks = 0;
+      if(localBefore){ try{ localTasks = Object.values(JSON.parse(localBefore).tasks || {}).reduce((a,arr)=>a+(Array.isArray(arr)?arr.length:0), 0); }catch(_){} }
+      try{ remoteTasks = Object.values(JSON.parse(f.content).tasks || {}).reduce((a,arr)=>a+(Array.isArray(arr)?arr.length:0), 0); }catch(_){}
+      logOp('gistPull_OVERWRITE', {localTasks, remoteTasks, localAt: state?._modifiedAt, remoteAt: remoteState?._modifiedAt});
+      if(localTasks > remoteTasks + 5){
+        logOp('WARN_PULL_REDUCES_DATA', {localTasks, remoteTasks});
+      }
+    }catch(_){}
     gistLastRemoteContent = f.content;
     localStorage.setItem(STORAGE_KEY, f.content);
     localStorage.setItem(GIST_KEY.lastPullWS, new Date().toISOString());
@@ -11061,6 +11103,19 @@ let _lastSnapshotAt = 0;
 saveState = function(){
   if(state && typeof state === 'object'){
     state._modifiedAt = new Date().toISOString();
+  }
+  // 操作ログ: 保存時のデータ規模を記録
+  const totalTasks = Object.values((state && state.tasks) || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+  const prevRaw = localStorage.getItem(STORAGE_KEY);
+  let prevTasks = 0;
+  if(prevRaw){
+    try{ prevTasks = Object.values(JSON.parse(prevRaw).tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0); }catch(_){}
+  }
+  logOp('saveState', {tasks: totalTasks, prevTasks, staff: (state.staff||[]).length, delta: totalTasks - prevTasks});
+  // 警告: タスク数が 50% 以上減少しているなら（誤動作の可能性）
+  if(prevTasks > 10 && totalTasks < prevTasks * 0.5){
+    logOp('WARN_BIG_DROP', {prevTasks, totalTasks, stack: (new Error()).stack});
+    console.warn('⚠ saveState で大幅な減少を検出:', prevTasks, '→', totalTasks);
   }
   _origSaveState();
   gistSyncDebouncedPush();
