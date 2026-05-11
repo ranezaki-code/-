@@ -2688,7 +2688,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '243415b'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10663,6 +10663,17 @@ async function gistPush(){
   gistPushing = true;
   try{
     const content = gistPayloadContent();
+    // 安全装置：ローカルが「ほぼ空」なのにリモートが「大きい」場合は push を拒否
+    // （誤削除や別端末のスタール状態が cloud のデータを消すのを防ぐ）
+    const localSize = content.length;
+    const remoteSize = (gistLastRemoteContent || '').length;
+    const localHasData = (Object.keys(state.tasks || {}).length > 0) || (state.staff || []).length > 0 || (state.recurringTasks || []).length > 0;
+    if(!localHasData && remoteSize > 50000){
+      console.warn('gist push aborted: local is empty but remote has data (', remoteSize, 'bytes)');
+      const detail = document.getElementById('sync-status-detail');
+      if(detail) detail.innerHTML = '<span style="color:var(--orange)">⚠ ローカルが空のため push を中止しました（クラウドのデータ保護）</span>';
+      return;
+    }
     const payload = { files: { [GIST_FILENAME_WS]: { content } } };
     await gistApi('PATCH', '/gists/' + id, payload);
     gistLastRemoteContent = content;
@@ -10892,12 +10903,29 @@ function startGistPolling(){
 
 /* saveState を Gist push にフック。state._modifiedAt も更新してタイムスタンプ比較に使う */
 const _origSaveState = saveState;
+let _lastSnapshotAt = 0;
 saveState = function(){
   if(state && typeof state === 'object'){
     state._modifiedAt = new Date().toISOString();
   }
   _origSaveState();
   gistSyncDebouncedPush();
+  // 自動スナップショット：5分以内には1回までとし、データが急減した時は記録
+  try{
+    const now = Date.now();
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if(cur && now - _lastSnapshotAt > 5 * 60 * 1000){
+      // データ規模（タスク数）を確認して、極端に減っていなければスナップショット保存
+      const totalTasks = Object.values(state.tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+      if(totalTasks > 0 || (state.staff || []).length > 0){
+        localStorage.setItem('ws_v1_snap_' + now, cur);
+        // 最新10件を残す
+        const snaps = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_snap_')).sort();
+        while(snaps.length > 10){ localStorage.removeItem(snaps.shift()); }
+        _lastSnapshotAt = now;
+      }
+    }
+  }catch(_){}
 };
 /* リロード/タブ閉じる前に未送信のpushを keepalive で送り出す */
 window.addEventListener('beforeunload', () => {
