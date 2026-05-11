@@ -1736,6 +1736,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="header">
     <h1>📋 ワークスケジュール</h1>
     <button id="admin-toggle" onclick="toggleAdminMode()" title="クリックで管理者モードに切り替え">🔒 従業員</button>
+    <button id="manual-push-btn" onclick="manualPushNow()" title="今すぐクラウド（Gist）に保存" style="background:#16a34a;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">💾 最新を保存</button>
     <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウド（Gist）から最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">🔄 最新を反映</button>
     <span class="sync-badge" id="sync-badge" onclick="openSyncModal()" title="クリックで同期設定">⚪ 未設定</span>
   </div>
@@ -2693,7 +2694,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '96165e9'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10386,6 +10387,27 @@ function clearAllData(){
   else if(currentView === 'dashboard') renderDashboard();
   else if(currentView === 'game') renderGameView();
   else render();
+}
+
+/* 手動で即時 push（保留中の debounce push があれば即座に発火、無ければ新規 push） */
+async function manualPushNow(){
+  const {token, id} = gistCfg();
+  if(!token || !id){ alert('クラウド同期が未設定です。同期設定で接続してください。'); return; }
+  // pending debounceがあれば clear して即座に push
+  if(typeof gistPushTimer !== 'undefined' && gistPushTimer){
+    clearTimeout(gistPushTimer);
+    gistPushTimer = null;
+  }
+  const btn = document.getElementById('manual-push-btn');
+  const origText = btn?.textContent;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 保存中...'; }
+  try{
+    await gistPush();
+    if(btn){ btn.textContent = '✓ 保存完了'; setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 1500); }
+  }catch(e){
+    if(btn){ btn.textContent = '✗ 失敗'; setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000); }
+    alert('保存失敗: ' + (e.message || e));
+  }
 }
 
 /* Gistから強制取得（タイムスタンプ比較を無視） */
