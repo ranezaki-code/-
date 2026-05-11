@@ -1736,8 +1736,14 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="header">
     <h1>📋 ワークスケジュール</h1>
     <button id="admin-toggle" onclick="toggleAdminMode()" title="クリックで管理者モードに切り替え">🔒 従業員</button>
-    <button id="manual-push-btn" onclick="manualPushNow()" title="今の編集をクラウドに送信" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;margin-left:6px;box-shadow:0 2px 4px rgba(22,163,74,.3)">💾 最新を保存</button>
-    <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウドから最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;margin-left:4px;box-shadow:0 2px 4px rgba(79,70,229,.3)">🔄 最新を反映</button>
+    <div style="display:inline-flex;flex-direction:column;align-items:center;margin-left:6px">
+      <button id="manual-push-btn" onclick="manualPushNow()" title="今の編集をクラウドに送信" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 4px rgba(22,163,74,.3)">💾 最新を保存</button>
+      <span style="font-size:9px;color:#cbd5e1;margin-top:2px;line-height:1">保存: <span id="manual-push-time">—</span></span>
+    </div>
+    <div style="display:inline-flex;flex-direction:column;align-items:center;margin-left:4px">
+      <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウドから最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 4px rgba(79,70,229,.3)">🔄 最新を反映</button>
+      <span style="font-size:9px;color:#cbd5e1;margin-top:2px;line-height:1">取得: <span id="manual-pull-time">—</span></span>
+    </div>
     <span class="sync-badge" id="sync-badge" onclick="openSyncModal()" title="クリックで同期設定">⚪ 未設定</span>
   </div>
 
@@ -2698,7 +2704,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.6'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '37fe344'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10859,12 +10865,17 @@ function gistUpdateStatus(){
       return new Date(iso).toLocaleString('ja-JP',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     }catch(e){return '—';}
   };
+  // ヘッダーボタン下の時刻表示も更新
+  const pushTimeEl = document.getElementById('manual-push-time');
+  const pullTimeEl = document.getElementById('manual-pull-time');
+  if(pushTimeEl) pushTimeEl.textContent = lastPush ? fmtT(lastPush) : '—';
+  if(pullTimeEl) pullTimeEl.textContent = lastPull ? fmtT(lastPull) : '—';
 
   if(token && id){
     badge.className = 'sync-badge s-on';
     badge.textContent = '🟢 同期中';
     if(detail){
-      detail.innerHTML = `<strong style="color:var(--green)">✓ 接続中</strong>　Gist ID: <code style="background:#fff;padding:1px 6px;border-radius:4px">${id}</code><br>最終アップロード: ${fmtT(lastPush)}　最終取得: ${fmtT(lastPull)}<br>自動Pull: ${POLL_INTERVAL_MS/1000}秒間隔`;
+      detail.innerHTML = `<strong style="color:var(--green)">✓ 接続中</strong>　Gist ID: <code style="background:#fff;padding:1px 6px;border-radius:4px">${id}</code><br>最終アップロード: ${fmtT(lastPush)}　最終取得: ${fmtT(lastPull)}<br><span style="color:var(--gray);font-size:11px">📌 Pull/Push は手動ボタン操作。編集は自動でローカル保存され、「最新を保存」でクラウドへ送信されます。</span>`;
     }
   } else if(token){
     badge.className = 'sync-badge s-warn';
