@@ -2688,7 +2688,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '6b93e58'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10679,10 +10679,22 @@ async function gistPush(){
     gistLastRemoteContent = content;
     localStorage.setItem(GIST_KEY.lastPushWS, new Date().toISOString());
     gistUpdateStatus();
+    if(typeof _gistLastSuccessfulPush !== 'undefined'){
+      _gistLastSuccessfulPush = Date.now();
+      _gistConsecutiveFailures = 0;
+      const banner = document.getElementById('sync-alert-banner');
+      if(banner) banner.remove();
+    }
   }catch(e){
     console.warn('gist push error', e);
     const detail = document.getElementById('sync-status-detail');
     if(detail) detail.innerHTML = '<span style="color:var(--red)">✗ アップロード失敗: ' + e.message + '</span>';
+    if(typeof _gistConsecutiveFailures !== 'undefined'){
+      _gistConsecutiveFailures++;
+      if(_gistConsecutiveFailures >= 2){
+        _showSyncAlertBanner('❌ クラウド同期エラー: ' + (e.message || e) + ' — タップで閉じる', '#b91c1c');
+      }
+    }
   }finally{
     gistPushing = false;
   }
@@ -10910,23 +10922,50 @@ saveState = function(){
   }
   _origSaveState();
   gistSyncDebouncedPush();
-  // 自動スナップショット：5分以内には1回までとし、データが急減した時は記録
+  // 自動スナップショット：1分間隔で記録（最新20件）
   try{
     const now = Date.now();
     const cur = localStorage.getItem(STORAGE_KEY);
-    if(cur && now - _lastSnapshotAt > 5 * 60 * 1000){
-      // データ規模（タスク数）を確認して、極端に減っていなければスナップショット保存
+    if(cur && now - _lastSnapshotAt > 60 * 1000){
       const totalTasks = Object.values(state.tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
       if(totalTasks > 0 || (state.staff || []).length > 0){
         localStorage.setItem('ws_v1_snap_' + now, cur);
-        // 最新10件を残す
         const snaps = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_snap_')).sort();
-        while(snaps.length > 10){ localStorage.removeItem(snaps.shift()); }
+        while(snaps.length > 20){ localStorage.removeItem(snaps.shift()); }
         _lastSnapshotAt = now;
       }
     }
   }catch(_){}
 };
+
+/* push 失敗 / 長時間 push 未成功の検出と警告表示 */
+let _gistLastSuccessfulPush = Date.now();
+let _gistConsecutiveFailures = 0;
+function _showSyncAlertBanner(msg, color){
+  let el = document.getElementById('sync-alert-banner');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'sync-alert-banner';
+    el.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;max-width:90vw;text-align:center';
+    el.onclick = () => el.remove();
+    document.body.appendChild(el);
+  }
+  el.style.background = color || '#dc2626';
+  el.style.color = '#fff';
+  el.textContent = msg;
+}
+function _checkSyncHealth(){
+  const {token, id} = gistCfg();
+  if(!token || !id) return;
+  const stale = (Date.now() - _gistLastSuccessfulPush) / 1000;
+  // 保存後 30 秒以上 push 成功していない場合の警告（local の編集と仮定）
+  const lastSave = state && state._modifiedAt ? new Date(state._modifiedAt).getTime() : 0;
+  const lastPush = _gistLastSuccessfulPush;
+  if(lastSave > lastPush && (Date.now() - lastSave) > 30 * 1000){
+    _showSyncAlertBanner('⚠ 同期エラー: 最新の編集が ' + Math.round((Date.now()-lastSave)/1000) + ' 秒間クラウドに送れていません。タップで閉じる', '#dc2626');
+  }
+}
+setInterval(_checkSyncHealth, 15 * 1000);
 /* リロード/タブ閉じる前に未送信のpushを keepalive で送り出す */
 window.addEventListener('beforeunload', () => {
   if(gistPushTimer){
