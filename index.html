@@ -1099,17 +1099,18 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 /* チェックリストモーダル */
 .checklist-warning{background:#fff3e0;border-left:3px solid var(--orange);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#e65100;line-height:1.6}
 .checklist-warning.success{background:var(--green-lt);border-left-color:var(--green);color:#1b5e20}
-.checklist-list{display:flex;flex-direction:column;gap:8px}
-.checklist-item{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:#fff;border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s}
+.checklist-list{display:flex;flex-direction:column;gap:6px}
+.checklist-item{display:flex;flex-direction:column;gap:4px;padding:10px 12px;background:#fff;border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:14px}
 .checklist-item:hover{border-color:var(--accent);background:var(--accent-lt)}
 .checklist-item.done{background:var(--green-lt);border-color:var(--green)}
 .checklist-item.done .cli-view-std{text-decoration:line-through;color:var(--gray)}
-.cli-view-where{font-size:11px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px;align-self:flex-start;letter-spacing:.3px}
-.cli-view-main{display:flex;align-items:flex-start;gap:12px}
-.cli-view-main input[type=checkbox]{width:22px;height:22px;flex-shrink:0;margin-top:2px;cursor:pointer;accent-color:var(--green)}
-.cli-view-std{font-size:15px;font-weight:700;color:#0f172a;line-height:1.45;word-break:break-word;flex:1}
-.cli-view-action{display:flex;align-items:flex-start;gap:6px;margin-left:34px;font-size:12px;color:#475569;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:3px solid #94a3b8;line-height:1.5;word-break:break-word}
-.cli-view-action-tag{display:inline-block;font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:4px;flex-shrink:0;letter-spacing:.5px}
+.cli-view-main{display:flex;align-items:flex-start;gap:10px}
+.cli-view-main input[type=checkbox]{width:20px;height:20px;flex-shrink:0;margin-top:1px;cursor:pointer}
+.cli-view-std-wrap{flex:1;line-height:1.5;word-break:break-word}
+.cli-view-where{display:inline;font-weight:700;color:#0369a1;margin-right:6px}
+.cli-view-std{display:inline}
+.cli-view-action{margin-left:30px;font-size:12px;color:var(--gray);line-height:1.5;word-break:break-word}
+.cli-view-action::before{content:'↳ NG時: ';color:#b45309;font-weight:600;margin-right:2px}
 
 /* プリセットカード */
 .preset-card{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;margin-bottom:8px;font-size:13px}
@@ -2694,7 +2695,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'cd46e45'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -4575,13 +4576,12 @@ function renderChecklistView(){
       if(item.type === 'section'){
         return `<div class="checklist-section-header">${escapeHtml(item.text || '')}</div>`;
       }
-      const whereHtml = item.where ? `<div class="cli-view-where">📍 ${escapeHtml(item.where)}</div>` : '';
-      const actionHtml = item.action ? `<div class="cli-view-action"><span class="cli-view-action-tag">NG時</span> ${escapeHtml(item.action)}</div>` : '';
+      const whereHtml = item.where ? `<span class="cli-view-where">${escapeHtml(item.where)}：</span>` : '';
+      const actionHtml = item.action ? `<div class="cli-view-action">${escapeHtml(item.action)}</div>` : '';
       return `<label class="checklist-item ${item.checked ? 'done' : ''}">
-        ${whereHtml}
         <div class="cli-view-main">
           <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleChecklistItem(${i})">
-          <span class="cli-view-std">${escapeHtml(item.text)}</span>
+          <span class="cli-view-std-wrap">${whereHtml}<span class="cli-view-std">${escapeHtml(item.text)}</span></span>
         </div>
         ${actionHtml}
       </label>`;
