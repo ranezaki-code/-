@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '5.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '763e71c'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -4695,6 +4695,8 @@ function completeBy(name){
   t.completedBy = name;
   t.completedAt = new Date().toISOString();
   if(t.timerStartedAt) t.timerStoppedAt = t.completedAt;
+  // 着手中の待機タスクで他を停止していたら、解除して再開
+  if(t.waiting && t.waitingActive){ _resumePausedByTask(t.id); }
   // 🎮 ポイント加算 + 演出
   const award = awardPointsForTask(name, t);
   saveState();
@@ -4786,13 +4788,20 @@ document.getElementById('complete-modal').addEventListener('click', e => {
 
 /* ========== 描画 ========== */
 /* 待機モードの状態切替（standby → active で同時に開始、active → standby で開始も取消）
-   着手時、現在時刻の時間枠にタスクを自動移動（時間軸の順番チェーンに自然に組み込まれる）。
-   取消時、元の予定時間枠に戻す。 */
+   着手時：現在時刻の時間枠にタスクを自動移動＋同レーンの進行中タスクを一時停止。
+   取消時：元の予定時間枠に戻す＋一時停止していたタスクを再開。 */
 function setTaskWaitingState(taskId, newState, ev){
   if(ev){ ev.stopPropagation(); ev.preventDefault(); }
   const found = findTaskByIdAnyDate(taskId);
   if(!found) return;
   const t = found.task;
+  const dKey = found.dateKey;
+  // レーン判定（カウンター/後方/両方/個人名）。両方は全レーンを覆う
+  const lanesOverlap = (a, b) => {
+    if(a === b) return true;
+    if(a === 'both' || b === 'both') return true;
+    return false;
+  };
   if(newState === 'active'){
     t.waitingActive = true;
     const now = new Date();
@@ -4807,11 +4816,23 @@ function setTaskWaitingState(taskId, newState, ev){
     t.min = 0;
     // 新しい時間枠の末尾に並び替え
     try{
-      const dKey = found.dateKey;
       if(typeof nextOrderInHour === 'function' && dKey){
         t.order = nextOrderInHour(dKey, t.hour);
       }
     }catch(_){}
+    // 同レーンの進行中タスクを一時停止
+    const myTan = t.tan || 'both';
+    (state.tasks[dKey] || []).forEach(x => {
+      if(x.id === t.id) return;
+      if(x.done || x.retired || x.skipped) return;
+      if(!x.startedAt) return;  // 進行中のみ
+      if(x.pausedByTaskId) return; // すでに別タスクで停止中
+      const xTan = x.tan || 'both';
+      if(lanesOverlap(myTan, xTan)){
+        x.pausedByTaskId = t.id;
+        x.pausedAt = now.toISOString();
+      }
+    });
   } else {
     t.waitingActive = false;
     delete t.waitingActivatedAt;
@@ -4823,9 +4844,30 @@ function setTaskWaitingState(taskId, newState, ev){
       delete t.originalHour;
       delete t.originalMin;
     }
+    // このタスクで一時停止していた他タスクを再開
+    (state.tasks[dKey] || []).forEach(x => {
+      if(x.pausedByTaskId === t.id){
+        delete x.pausedByTaskId;
+        delete x.pausedAt;
+      }
+    });
   }
   saveState();
   refreshCurrentView();
+}
+
+/* 着手中の待機タスクが完了/リタイア/スキップされた時、停止していた他タスクを自動再開 */
+function _resumePausedByTask(taskId){
+  if(!taskId) return;
+  Object.values(state.tasks || {}).forEach(list => {
+    if(!Array.isArray(list)) return;
+    list.forEach(x => {
+      if(x.pausedByTaskId === taskId){
+        delete x.pausedByTaskId;
+        delete x.pausedAt;
+      }
+    });
+  });
 }
 
 /* ========== 優先タスク（待機・発動・順番管理）—  v4.2 まで使用、v4.3 で廃止 ========== */
@@ -5240,6 +5282,9 @@ function renderTask(t, ctx){
           startEl = `<button class="task-start-btn" onclick="startTask('${t.id}', event)">▶ 開始</button>`;
         }
       }
+    } else if(t.pausedByTaskId){
+      // 別の待機タスクが着手中で一時停止されている
+      startEl = `<span class="task-progress-badge" style="background:#fbbf24;color:#78350f" title="他の優先タスク着手中のため一時停止">⏸ 一時停止中</span>`;
     } else {
       const elapsed = Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000);
       startEl = `<span class="task-progress-badge" data-progress-task="${t.id}" data-started="${t.startedAt}" onclick="resetStartedAt('${t.id}', event)" title="クリックで開始を取り消し">進行中 ${fmtTimerTime(elapsed)}</span>`;
@@ -5443,6 +5488,7 @@ function confirmRetire(){
   t.retired = true;
   t.retiredBy = by;
   t.retiredReason = reason;
+  if(t.waiting && t.waitingActive){ _resumePausedByTask(t.id); }
   t.retiredAt = new Date().toISOString();
   // タイマー進行を止める
   t.startedAt = null;
@@ -5503,6 +5549,7 @@ function confirmSkip(){
   t.skipped = true;
   t.skippedBy = by;
   t.skippedReason = reason;
+  if(t.waiting && t.waitingActive){ _resumePausedByTask(t.id); }
   t.skippedAt = new Date().toISOString();
   t.startedAt = null;
   t.timerStartedAt = null;
