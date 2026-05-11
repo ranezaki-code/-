@@ -2704,7 +2704,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '0de044e'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10467,6 +10467,99 @@ function restoreLastAutobackup(){
   location.reload();
 }
 
+/* ========== マージ用ヘルパー：item に最終編集時刻を刻む ========== */
+function _touch(obj){
+  if(!obj || typeof obj !== 'object') return obj;
+  obj._at = new Date().toISOString();
+  return obj;
+}
+/* state を deep merge（部品レベルで「新しい方を採用」） */
+function mergeStates(local, remote){
+  if(!remote || typeof remote !== 'object') return local;
+  if(!local || typeof local !== 'object') return remote;
+  const out = {};
+  const tsOf = o => (o && o._at) ? new Date(o._at).getTime() : 0;
+  // tasks: 日付ごとに、各タスクを id でマージ
+  out.tasks = {};
+  const dates = new Set([...Object.keys(local.tasks || {}), ...Object.keys(remote.tasks || {})]);
+  dates.forEach(dk => {
+    const localList = (local.tasks && local.tasks[dk]) || [];
+    const remoteList = (remote.tasks && remote.tasks[dk]) || [];
+    const byId = new Map();
+    localList.forEach(t => { if(t && t.id) byId.set(t.id, t); });
+    remoteList.forEach(t => {
+      if(!t || !t.id) return;
+      const ex = byId.get(t.id);
+      if(!ex) { byId.set(t.id, t); return; }
+      // 削除フラグ（_del）が立っていれば、新しい方の判断を優先
+      byId.set(t.id, tsOf(t) > tsOf(ex) ? t : ex);
+    });
+    out.tasks[dk] = Array.from(byId.values()).filter(t => !t._del);
+  });
+  // recurringTasks: id でマージ
+  const rtMap = new Map();
+  (local.recurringTasks || []).forEach(rt => { if(rt && rt.id) rtMap.set(rt.id, rt); });
+  (remote.recurringTasks || []).forEach(rt => {
+    if(!rt || !rt.id) return;
+    const ex = rtMap.get(rt.id);
+    if(!ex) { rtMap.set(rt.id, rt); return; }
+    rtMap.set(rt.id, tsOf(rt) > tsOf(ex) ? rt : ex);
+  });
+  out.recurringTasks = Array.from(rtMap.values()).filter(rt => !rt._del);
+  // gameProfiles: 名前ごとに、新しい方の profile 全体を採用
+  out.gameProfiles = {};
+  const profNames = new Set([...Object.keys(local.gameProfiles || {}), ...Object.keys(remote.gameProfiles || {})]);
+  profNames.forEach(name => {
+    const lp = (local.gameProfiles || {})[name];
+    const rp = (remote.gameProfiles || {})[name];
+    if(!lp) { out.gameProfiles[name] = rp; return; }
+    if(!rp) { out.gameProfiles[name] = lp; return; }
+    out.gameProfiles[name] = tsOf(rp) > tsOf(lp) ? rp : lp;
+  });
+  // requestTasks: id でマージ
+  const reqMap = new Map();
+  (local.requestTasks || []).forEach(r => { if(r && r.id) reqMap.set(r.id, r); });
+  (remote.requestTasks || []).forEach(r => {
+    if(!r || !r.id) return;
+    const ex = reqMap.get(r.id);
+    if(!ex) { reqMap.set(r.id, r); return; }
+    reqMap.set(r.id, tsOf(r) > tsOf(ex) ? r : ex);
+  });
+  out.requestTasks = Array.from(reqMap.values()).filter(r => !r._del);
+  // 配列系（重複なし、union）
+  const unionStr = (a, b) => Array.from(new Set([...(a || []), ...(b || [])]));
+  out.staff = unionStr(local.staff, remote.staff);
+  out.categories = unionStr(local.categories, remote.categories);
+  // presets / customTitles / customItems: id があれば id で、無ければ全保持
+  const unionById = (a, b) => {
+    const m = new Map();
+    (a || []).forEach(x => { if(x && x.id) m.set(x.id, x); else m.set(JSON.stringify(x), x); });
+    (b || []).forEach(x => {
+      const k = (x && x.id) ? x.id : JSON.stringify(x);
+      const ex = m.get(k);
+      if(!ex) m.set(k, x);
+      else m.set(k, tsOf(x) > tsOf(ex) ? x : ex);
+    });
+    return Array.from(m.values()).filter(x => !x._del);
+  };
+  out.presets = unionById(local.presets, remote.presets);
+  out.customTitles = unionById(local.customTitles, remote.customTitles);
+  out.customItems = unionById(local.customItems, remote.customItems);
+  // breakLogs: 配列の重複なし union（順序保持）
+  const seen = new Set();
+  out.breakLogs = [...(local.breakLogs || []), ...(remote.breakLogs || [])].filter(b => {
+    const k = JSON.stringify(b); if(seen.has(k)) return false; seen.add(k); return true;
+  });
+  // 設定系: 最終更新時刻が新しい方
+  const lMod = local._modifiedAt ? new Date(local._modifiedAt).getTime() : 0;
+  const rMod = remote._modifiedAt ? new Date(remote._modifiedAt).getTime() : 0;
+  out.breakSettings = (rMod > lMod) ? (remote.breakSettings || local.breakSettings) : (local.breakSettings || remote.breakSettings);
+  out.gameSettings = (rMod > lMod) ? (remote.gameSettings || local.gameSettings) : (local.gameSettings || remote.gameSettings);
+  out.activeBreak = (rMod > lMod) ? remote.activeBreak : local.activeBreak;
+  out._modifiedAt = new Date().toISOString();
+  return out;
+}
+
 /* ========== データ操作ログ（localStorage + IndexedDB に二重書き込み） ========== */
 const OP_LOG_KEY = 'ws_v1_oplog';
 const OP_LOG_IDB_STORE = 'oplog';
@@ -10957,40 +11050,39 @@ async function gistPush(){
       logOp('PUSH_ABORTED_LOCAL_EMPTY', {remoteSize});
       return;
     }
-    // 安全装置2：他端末が先に push していないか確認（プリフライト）
+    // === Pull-Merge-Push: 他端末の更新と自分の変更を統合 ===
+    let mergedContent = content;
     if(gistLastRemoteContent){
       try{
         const r = await gistApi('GET', '/gists/' + id);
         const f = r.files && r.files[GIST_FILENAME_WS];
         const remoteNow = f && f.content;
         if(remoteNow && remoteNow !== gistLastRemoteContent){
-          // 別端末からの更新あり
+          // 別端末からの更新あり → マージ
           let remoteState = null;
           try{ remoteState = JSON.parse(remoteNow); }catch(_){}
-          const localAt = state && state._modifiedAt;
-          const remoteAt = remoteState && remoteState._modifiedAt;
-          logOp('PUSH_PREFLIGHT_CONFLICT', {localAt, remoteAt, localSize: content.length, remoteSize: remoteNow.length});
-          if(localAt && remoteAt && new Date(remoteAt).getTime() > new Date(localAt).getTime()){
-            // リモートが新しい → 自分の push は古い → 止める
-            console.warn('gist push aborted: remote is newer');
-            const detail = document.getElementById('sync-status-detail');
-            if(detail) detail.innerHTML = '<span style="color:var(--orange)">⚠ 別端末の更新があるため push を中止</span>';
-            // 警告バナー
-            if(typeof _showSyncAlertBanner === 'function'){
-              _showSyncAlertBanner('⚠ 別端末で先に更新されています。ページ更新で最新を取り込んでください。タップで閉じる', '#f59e0b');
-            }
-            logOp('PUSH_ABORTED_REMOTE_NEWER', {localAt, remoteAt});
-            return;
+          if(remoteState){
+            const merged = mergeStates(state, remoteState);
+            // ローカルに反映
+            state = merged;
+            mergedContent = JSON.stringify(merged, null, 2);
+            // localStorage も書き換える（マージ済み内容を保存）
+            try{ localStorage.setItem(STORAGE_KEY, mergedContent); }catch(_){}
+            // 操作ログ
+            const localTasks = Object.values((state.tasks)||{}).reduce((a,arr)=>a+(Array.isArray(arr)?arr.length:0),0);
+            logOp('PUSH_MERGE_DONE', {mergedTasks: localTasks, mergedSize: mergedContent.length});
+            // UI 再描画（マージで取り込まれた別端末の変更が画面に出る）
+            try{ if(typeof refreshCurrentView === 'function') refreshCurrentView(); else if(typeof render === 'function') render(); }catch(_){}
           }
-          // 自分の方が新しい → 進む（が、リモート差分があったことは記録）
         }
       }catch(e){
-        console.warn('preflight check failed (continuing push)', e);
+        console.warn('merge step failed (pushing local only)', e);
+        logOp('PUSH_MERGE_FAILED', {err: e.message});
       }
     }
-    const payload = { files: { [GIST_FILENAME_WS]: { content } } };
+    const payload = { files: { [GIST_FILENAME_WS]: { content: mergedContent } } };
     await gistApi('PATCH', '/gists/' + id, payload);
-    gistLastRemoteContent = content;
+    gistLastRemoteContent = mergedContent;
     localStorage.setItem(GIST_KEY.lastPushWS, new Date().toISOString());
     gistUpdateStatus();
     if(typeof _gistLastSuccessfulPush !== 'undefined'){
@@ -11233,22 +11325,70 @@ function startGistPolling(){
 /* saveState を Gist push にフック。state._modifiedAt も更新してタイムスタンプ比較に使う */
 const _origSaveState = saveState;
 let _lastSnapshotAt = 0;
+// アイテム差分判定（_at 以外のフィールドが違うか）
+function _itemDiffers(a, b){
+  if(!a || !b) return true;
+  const ks = new Set([...Object.keys(a), ...Object.keys(b)]);
+  ks.delete('_at');
+  for(const k of ks){
+    if(JSON.stringify(a[k]) !== JSON.stringify(b[k])) return true;
+  }
+  return false;
+}
 saveState = function(){
   if(state && typeof state === 'object'){
     state._modifiedAt = new Date().toISOString();
   }
-  // 操作ログ: 保存時のデータ規模を記録
+  // === 変更検出：前回保存と比較して、変更されたアイテムだけ _at を更新 ===
+  try{
+    const prevRaw = localStorage.getItem(STORAGE_KEY);
+    const prev = prevRaw ? JSON.parse(prevRaw) : null;
+    const now = new Date().toISOString();
+    // tasks: 日付ごと、id 別に diff
+    Object.entries(state.tasks || {}).forEach(([dk, list]) => {
+      if(!Array.isArray(list)) return;
+      const prevById = new Map();
+      ((prev && prev.tasks && prev.tasks[dk]) || []).forEach(t => { if(t && t.id) prevById.set(t.id, t); });
+      list.forEach(t => {
+        if(!t || !t.id) return;
+        const p = prevById.get(t.id);
+        if(!p || _itemDiffers(t, p)) t._at = now;
+      });
+    });
+    // recurringTasks
+    const prevRtById = new Map();
+    ((prev && prev.recurringTasks) || []).forEach(rt => { if(rt && rt.id) prevRtById.set(rt.id, rt); });
+    (state.recurringTasks || []).forEach(rt => {
+      if(!rt || !rt.id) return;
+      const p = prevRtById.get(rt.id);
+      if(!p || _itemDiffers(rt, p)) rt._at = now;
+    });
+    // gameProfiles（名前ごと）
+    const prevGP = (prev && prev.gameProfiles) || {};
+    Object.entries(state.gameProfiles || {}).forEach(([name, prof]) => {
+      if(!prof) return;
+      const p = prevGP[name];
+      if(!p || _itemDiffers(prof, p)) prof._at = now;
+    });
+    // requestTasks
+    const prevReqById = new Map();
+    ((prev && prev.requestTasks) || []).forEach(r => { if(r && r.id) prevReqById.set(r.id, r); });
+    (state.requestTasks || []).forEach(r => {
+      if(!r || !r.id) return;
+      const p = prevReqById.get(r.id);
+      if(!p || _itemDiffers(r, p)) r._at = now;
+    });
+  }catch(e){ console.warn('_at stamping skipped', e); }
+  // === 操作ログ ===
   const totalTasks = Object.values((state && state.tasks) || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
-  const prevRaw = localStorage.getItem(STORAGE_KEY);
+  const prevRaw2 = localStorage.getItem(STORAGE_KEY);
   let prevTasks = 0;
-  if(prevRaw){
-    try{ prevTasks = Object.values(JSON.parse(prevRaw).tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0); }catch(_){}
+  if(prevRaw2){
+    try{ prevTasks = Object.values(JSON.parse(prevRaw2).tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0); }catch(_){}
   }
   logOp('saveState', {tasks: totalTasks, prevTasks, staff: (state.staff||[]).length, delta: totalTasks - prevTasks});
-  // 警告: タスク数が 50% 以上減少しているなら（誤動作の可能性）
   if(prevTasks > 10 && totalTasks < prevTasks * 0.5){
-    logOp('WARN_BIG_DROP', {prevTasks, totalTasks, stack: (new Error()).stack});
-    console.warn('⚠ saveState で大幅な減少を検出:', prevTasks, '→', totalTasks);
+    logOp('WARN_BIG_DROP', {prevTasks, totalTasks});
   }
   _origSaveState();
   gistSyncDebouncedPush();
