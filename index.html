@@ -1717,6 +1717,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* フッター */
 #footer{padding:14px;text-align:center;font-size:11px;color:var(--gray);background:#fff;border-top:1px solid var(--border)}
 #footer .save-info{margin-top:4px}
+@keyframes sync-blink { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 #footer .version-info{margin-top:6px;font-size:11px;color:#6b7280;letter-spacing:.3px;font-variant-numeric:tabular-nums}
 #footer .version-info .v-num{display:inline-block;background:#4f46e5;color:#fff;font-weight:800;padding:2px 8px;border-radius:6px;font-size:12px;letter-spacing:.5px}
 #footer .version-info .v-build{margin-left:6px;font-size:10px;color:#9ca3af}
@@ -1736,13 +1737,9 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="header">
     <h1>📋 ワークスケジュール</h1>
     <button id="admin-toggle" onclick="toggleAdminMode()" title="クリックで管理者モードに切り替え">🔒 従業員</button>
-    <div style="display:inline-flex;flex-direction:column;align-items:center;margin-left:6px">
-      <button id="manual-push-btn" onclick="manualPushNow()" title="今の編集をクラウドに送信" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 4px rgba(22,163,74,.3)">💾 最新を保存</button>
-      <span style="font-size:9px;color:#cbd5e1;margin-top:2px;line-height:1">保存: <span id="manual-push-time">—</span></span>
-    </div>
-    <div style="display:inline-flex;flex-direction:column;align-items:center;margin-left:4px">
-      <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウドから最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 4px rgba(79,70,229,.3)">🔄 最新を反映</button>
-      <span style="font-size:9px;color:#cbd5e1;margin-top:2px;line-height:1">取得: <span id="manual-pull-time">—</span></span>
+    <div id="sync-indicator" onclick="openSyncDetails()" title="クリックで詳細表示" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-left:6px;background:#10b981;color:#fff;transition:all .2s;box-shadow:0 2px 4px rgba(0,0,0,.15)">
+      <span id="sync-icon">⏳</span>
+      <span id="sync-label">同期中…</span>
     </div>
     <span class="sync-badge" id="sync-badge" onclick="openSyncModal()" title="クリックで同期設定">⚪ 未設定</span>
   </div>
@@ -2704,7 +2701,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'f62ff13'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -11085,24 +11082,23 @@ async function gistPush(){
     gistLastRemoteContent = mergedContent;
     localStorage.setItem(GIST_KEY.lastPushWS, new Date().toISOString());
     gistUpdateStatus();
-    if(typeof _gistLastSuccessfulPush !== 'undefined'){
-      _gistLastSuccessfulPush = Date.now();
-      _gistConsecutiveFailures = 0;
-      const banner = document.getElementById('sync-alert-banner');
-      if(banner) banner.remove();
-    }
+    _gistLastSuccessfulPush = Date.now();
+    _gistConsecutiveFailures = 0;
+    _gistLastError = '';
+    if(_gistRetryTimer){ clearTimeout(_gistRetryTimer); _gistRetryTimer = null; }
+    _updateSyncIndicator();
   }catch(e){
     console.warn('gist push error', e);
     const detail = document.getElementById('sync-status-detail');
     if(detail) detail.innerHTML = '<span style="color:var(--red)">✗ アップロード失敗: ' + e.message + '</span>';
-    if(typeof _gistConsecutiveFailures !== 'undefined'){
-      _gistConsecutiveFailures++;
-      if(_gistConsecutiveFailures >= 2){
-        _showSyncAlertBanner('❌ クラウド同期エラー: ' + (e.message || e) + ' — タップで閉じる', '#b91c1c');
-      }
-    }
+    _gistConsecutiveFailures++;
+    _gistLastError = e.message || String(e);
+    logOp('PUSH_FAILED', {err: _gistLastError, failures: _gistConsecutiveFailures});
+    _scheduleRetry();
+    _updateSyncIndicator();
   }finally{
     gistPushing = false;
+    _updateSyncIndicator();
   }
 }
 
@@ -11411,34 +11407,128 @@ saveState = function(){
   }catch(_){}
 };
 
-/* push 失敗 / 長時間 push 未成功の検出と警告表示 */
-let _gistLastSuccessfulPush = Date.now();
+/* ========== 同期インジケータの状態管理 ========== */
+let _gistLastSuccessfulPush = 0;  // 最後にpushが成功した時刻 (ms)
 let _gistConsecutiveFailures = 0;
-function _showSyncAlertBanner(msg, color){
-  let el = document.getElementById('sync-alert-banner');
-  if(!el){
-    el = document.createElement('div');
-    el.id = 'sync-alert-banner';
-    el.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;max-width:90vw;text-align:center';
-    el.onclick = () => el.remove();
-    document.body.appendChild(el);
-  }
-  el.style.background = color || '#dc2626';
-  el.style.color = '#fff';
-  el.textContent = msg;
-}
-function _checkSyncHealth(){
+let _gistLastError = '';
+let _gistRetryTimer = null;
+let _gistAutoExportedAt = 0;       // 自動ファイル退避を行った時刻
+
+function _updateSyncIndicator(){
+  const el = document.getElementById('sync-indicator');
+  if(!el) return;
+  const iconEl = document.getElementById('sync-icon');
+  const labelEl = document.getElementById('sync-label');
   const {token, id} = gistCfg();
-  if(!token || !id) return;
-  const stale = (Date.now() - _gistLastSuccessfulPush) / 1000;
-  // 保存後 30 秒以上 push 成功していない場合の警告（local の編集と仮定）
-  const lastSave = state && state._modifiedAt ? new Date(state._modifiedAt).getTime() : 0;
+  if(!token || !id){
+    el.style.background = '#94a3b8';
+    iconEl.textContent = '⚪';
+    labelEl.textContent = '同期未設定';
+    return;
+  }
+  // 編集が pending（saveStateされてからpush未成功までの時間）
+  const localAt = state && state._modifiedAt ? new Date(state._modifiedAt).getTime() : 0;
   const lastPush = _gistLastSuccessfulPush;
-  if(lastSave > lastPush && (Date.now() - lastSave) > 30 * 1000){
-    _showSyncAlertBanner('⚠ 同期エラー: 最新の編集が ' + Math.round((Date.now()-lastSave)/1000) + ' 秒間クラウドに送れていません。タップで閉じる', '#dc2626');
+  const pending = localAt > lastPush;
+  const failSec = _gistConsecutiveFailures > 0 ? Math.round((Date.now() - localAt) / 1000) : 0;
+  if(gistPushing){
+    el.style.background = '#3b82f6';
+    iconEl.textContent = '⏳';
+    labelEl.textContent = '送信中…';
+  } else if(_gistConsecutiveFailures >= 5 || failSec > 300){
+    // 5分以上失敗 → 真っ赤
+    el.style.background = '#dc2626';
+    iconEl.textContent = '❌';
+    labelEl.textContent = '同期エラー！';
+    el.style.animation = 'sync-blink 1s infinite';
+  } else if(_gistConsecutiveFailures > 0){
+    el.style.background = '#f59e0b';
+    iconEl.textContent = '⚠';
+    labelEl.textContent = '送信失敗（再試行中）';
+    el.style.animation = '';
+  } else if(pending){
+    el.style.background = '#f59e0b';
+    iconEl.textContent = '⏳';
+    labelEl.textContent = '未送信';
+    el.style.animation = '';
+  } else {
+    el.style.background = '#10b981';
+    iconEl.textContent = '✓';
+    const t = lastPush ? new Date(lastPush) : null;
+    labelEl.textContent = '同期済み ' + (t ? `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}` : '');
+    el.style.animation = '';
   }
 }
-setInterval(_checkSyncHealth, 15 * 1000);
+
+function openSyncDetails(){
+  const {token, id} = gistCfg();
+  const localAt = state && state._modifiedAt ? new Date(state._modifiedAt).toLocaleString('ja-JP') : '—';
+  const lastPushT = _gistLastSuccessfulPush ? new Date(_gistLastSuccessfulPush).toLocaleString('ja-JP') : '—';
+  const status = _gistConsecutiveFailures >= 5 ? '❌ 5分以上失敗' : (_gistConsecutiveFailures > 0 ? `⚠ ${_gistConsecutiveFailures}回失敗中` : '✓ 正常');
+  const msg = [
+    '【同期状況】',
+    `状態: ${status}`,
+    `最終ローカル編集: ${localAt}`,
+    `最終クラウド送信: ${lastPushT}`,
+    `Gist ID: ${id || '未設定'}`,
+    _gistLastError ? `直近のエラー: ${_gistLastError}` : ''
+  ].filter(s => s).join('\n');
+  if(_gistConsecutiveFailures >= 5){
+    if(confirm(msg + '\n\n[OK] 今すぐデータをファイルに保存して回避\n[キャンセル] 何もしない')){
+      try{ exportDataToFile(); }catch(_){}
+    }
+  } else {
+    alert(msg);
+  }
+}
+
+/* push 失敗時のリトライタイマー */
+function _scheduleRetry(){
+  if(_gistRetryTimer) clearTimeout(_gistRetryTimer);
+  // 失敗回数に応じてバックオフ（30s → 1m → 2m → 3m）。最大5分
+  const delays = [30000, 60000, 120000, 180000, 300000];
+  const delay = delays[Math.min(_gistConsecutiveFailures - 1, delays.length - 1)];
+  _gistRetryTimer = setTimeout(() => {
+    _gistRetryTimer = null;
+    if(_gistConsecutiveFailures > 0){
+      console.log('gist push auto-retry');
+      gistPush().catch(_=>{});
+    }
+  }, delay);
+}
+
+/* 5分以上失敗が続いたら自動でファイル保存 */
+function _checkSustainedFailure(){
+  if(_gistConsecutiveFailures < 5) return;
+  const since = Date.now() - _gistAutoExportedAt;
+  if(since < 5 * 60 * 1000) return; // 1回退避したら 5分は間隔を空ける
+  // 自動でファイル保存
+  try{
+    if(typeof exportDataToFile === 'function'){
+      exportDataToFile();
+      _gistAutoExportedAt = Date.now();
+      // 全画面警告
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(220,38,38,.95);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px';
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;text-align:center;box-shadow:0 12px 32px rgba(0,0,0,.4)">
+          <div style="font-size:28px;margin-bottom:12px">❌ クラウド同期が止まっています</div>
+          <div style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:16px">
+            5分以上、クラウドへの保存に失敗しています。<br>
+            <strong style="color:#dc2626">万一に備え、データをファイルとして自動ダウンロードしました。</strong><br>
+            このまま編集を続けても、データが失われる可能性があります。<br>
+            ネットワーク状態を確認するか、後でもう一度試してください。
+          </div>
+          <button onclick="this.closest('div').parentNode.remove()" style="background:#dc2626;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">確認しました</button>
+        </div>`;
+      document.body.appendChild(overlay);
+    }
+  }catch(e){ console.warn('auto export failed', e); }
+}
+
+/* 1秒ごとにインジケータ更新 */
+setInterval(_updateSyncIndicator, 1000);
+setInterval(_checkSustainedFailure, 30 * 1000);
 /* リロード/タブ閉じる前に未送信のpushを keepalive で送り出す */
 window.addEventListener('beforeunload', () => {
   if(gistPushTimer){
