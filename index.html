@@ -2692,7 +2692,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'fbb1998'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10434,27 +10434,99 @@ function restoreLastAutobackup(){
   location.reload();
 }
 
-/* ========== データ操作ログ（消失の原因究明のため、全操作を記録） ========== */
+/* ========== データ操作ログ（localStorage + IndexedDB に二重書き込み） ========== */
 const OP_LOG_KEY = 'ws_v1_oplog';
-const OP_LOG_MAX = 500; // 直近500件のみ保持
+const OP_LOG_IDB_STORE = 'oplog';
+const OP_LOG_MAX = 500;
+let _oplogIdbReady = null;
+function _oplogIdbOpen(){
+  if(_oplogIdbReady) return _oplogIdbReady;
+  _oplogIdbReady = new Promise((resolve) => {
+    try{
+      const req = indexedDB.open('ws_oplog_db', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if(!db.objectStoreNames.contains(OP_LOG_IDB_STORE)){
+          db.createObjectStore(OP_LOG_IDB_STORE, {keyPath: 'id', autoIncrement: true});
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    }catch(_){ resolve(null); }
+  });
+  return _oplogIdbReady;
+}
+async function _oplogSaveToIdb(entry){
+  try{
+    const db = await _oplogIdbOpen();
+    if(!db) return;
+    await new Promise((res) => {
+      const tx = db.transaction(OP_LOG_IDB_STORE, 'readwrite');
+      tx.objectStore(OP_LOG_IDB_STORE).add(entry);
+      tx.oncomplete = res;
+      tx.onerror = res;
+    });
+    // 古いログを削除（1500件超えたら）
+    const all = await _oplogGetAllFromIdb();
+    if(all.length > 1500){
+      const toDelete = all.slice(0, all.length - 1500);
+      for(const e of toDelete){
+        await new Promise(r => {
+          const tx = db.transaction(OP_LOG_IDB_STORE, 'readwrite');
+          tx.objectStore(OP_LOG_IDB_STORE).delete(e.id);
+          tx.oncomplete = r; tx.onerror = r;
+        });
+      }
+    }
+  }catch(_){}
+}
+async function _oplogGetAllFromIdb(){
+  try{
+    const db = await _oplogIdbOpen();
+    if(!db) return [];
+    return await new Promise(res => {
+      const tx = db.transaction(OP_LOG_IDB_STORE, 'readonly');
+      const req = tx.objectStore(OP_LOG_IDB_STORE).getAll();
+      req.onsuccess = () => res(req.result || []);
+      req.onerror = () => res([]);
+    });
+  }catch(_){ return []; }
+}
 function logOp(event, info){
+  const entry = {
+    t: new Date().toISOString(),
+    event,
+    info: info || {},
+    stack: (new Error()).stack?.split('\n').slice(2, 5).join(' | ')
+  };
+  // 1) localStorage（速い・ただし ITP で消える）
   try{
     const log = JSON.parse(localStorage.getItem(OP_LOG_KEY) || '[]');
-    log.push({
-      t: new Date().toISOString(),
-      event,
-      info: info || {},
-      stack: (new Error()).stack?.split('\n').slice(2, 5).join(' | ') // 呼び出し元3階層
-    });
+    log.push(entry);
     while(log.length > OP_LOG_MAX) log.shift();
     localStorage.setItem(OP_LOG_KEY, JSON.stringify(log));
   }catch(_){}
+  // 2) IndexedDB（遅いがITPに強い）
+  _oplogSaveToIdb(entry).catch(_=>{});
 }
-function viewOpLog(){
-  const log = JSON.parse(localStorage.getItem(OP_LOG_KEY) || '[]');
-  if(log.length === 0){ alert('操作ログがありません'); return; }
-  const text = log.map(e => `[${e.t.slice(11,19)}] ${e.event}: ${JSON.stringify(e.info)}`).join('\n');
-  // 新しいタブで表示
+async function viewOpLog(){
+  // localStorage + IndexedDB を両方取得して時系列で表示
+  let lsLog = [];
+  try{ lsLog = JSON.parse(localStorage.getItem(OP_LOG_KEY) || '[]'); }catch(_){}
+  const idbLog = await _oplogGetAllFromIdb();
+  const combined = [...lsLog, ...idbLog.map(({id, ...e}) => e)];
+  // 重複削除（同じ t + event）
+  const seen = new Set();
+  const unique = combined.filter(e => {
+    const k = e.t + '|' + e.event;
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  unique.sort((a,b) => (a.t || '').localeCompare(b.t || ''));
+  if(unique.length === 0){ alert('操作ログがありません'); return; }
+  const header = `=== 操作ログ ===\nlocalStorage: ${lsLog.length}件 / IndexedDB: ${idbLog.length}件 / 統合: ${unique.length}件\n\n`;
+  const text = header + unique.map(e => `[${(e.t||'').slice(11,19)}] ${e.event}: ${JSON.stringify(e.info)}`).join('\n');
   const blob = new Blob([text], {type: 'text/plain'});
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
