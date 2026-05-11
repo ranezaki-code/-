@@ -1441,7 +1441,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 .hour-chip input{display:none}
 .hour-chip:hover{border-color:var(--main);background:var(--main-lt);color:var(--main)}
 .hour-chip:has(input:checked){border-color:var(--main);background:var(--main);color:#fff;font-weight:900}
-.hour-chip.is-primary{cursor:default;opacity:.5}
+/* is-primary は v2.5 で廃止（全時間枠を同一の選択可能チェックボックスに統一） */
 .fz-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
 /* === QSC セクション + 横長行 === */
 .fr-section{margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#fff}
@@ -2688,7 +2688,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.5'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '649caa7'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -3034,16 +3034,12 @@ document.addEventListener('input', e => {
 });
 function renderMultiHourPicker(primaryHour, selectedHours){
   const sel = new Set((selectedHours || []).map(Number));
+  if(typeof primaryHour === 'number') sel.add(primaryHour);
   const container = document.getElementById('m-times-multi');
   if(!container) return;
   const cells = [];
   for(let h = 0; h < 24; h++){
-    const isPrimary = (h === primaryHour);
-    if(isPrimary){
-      cells.push(`<span class="hour-chip is-primary">${String(h).padStart(2,'0')}時</span>`);
-    } else {
-      cells.push(`<label class="hour-chip"><input type="checkbox" name="m-mtime" value="${h}" ${sel.has(h)?'checked':''}><span>${String(h).padStart(2,'0')}時</span></label>`);
-    }
+    cells.push(`<label class="hour-chip"><input type="checkbox" name="m-mtime" value="${h}" ${sel.has(h)?'checked':''}><span>${String(h).padStart(2,'0')}時</span></label>`);
   }
   container.innerHTML = cells.join('');
 }
@@ -3275,13 +3271,18 @@ function saveTask(){
   const selectedDows = getSelectedDows();
   const isRecurring = selectedDows.length > 0;
   const newDateKey = document.getElementById('m-date').value || editingDateKey;
-  const startStr = document.getElementById('m-time-start').value || '00:00';
-  const [sh, sm] = startStr.split(':').map(Number);
-  const endStr = document.getElementById('m-time-end').value;
-  let eh = null, em = null;
-  if(endStr){
-    [eh, em] = endStr.split(':').map(Number);
+  // 時間枠は multi-hour picker のチェックボックスから取得
+  const checkedHours = Array.from(document.querySelectorAll('input[name=m-mtime]:checked'))
+    .map(cb => parseInt(cb.value, 10))
+    .filter(h => Number.isFinite(h))
+    .sort((a, b) => a - b);
+  if(checkedHours.length === 0){
+    alert('時間枠を少なくとも1つ選んでください');
+    return;
   }
+  const sh = checkedHours[0];
+  const sm = 0;
+  let eh = null, em = null;
   const tan = document.getElementById('m-tan').value || 'both';
   const cats = Array.from(document.querySelectorAll('input[name=m-cat]:checked')).map(cb => cb.value);
   const zones = Array.from(document.querySelectorAll('input[name=m-zone]:checked')).map(cb => cb.value);
@@ -3317,9 +3318,7 @@ function saveTask(){
     });
 
   // 複数時刻：チェック済みの追加時刻（主時刻 sh は除外）
-  const extraHours = Array.from(document.querySelectorAll('input[name=m-mtime]:checked'))
-    .map(cb => parseInt(cb.value, 10))
-    .filter(h => Number.isFinite(h) && h !== sh);
+  const extraHours = checkedHours.filter(h => h !== sh);
   // 並び順位置：last=末尾 / first=先頭
   const orderPosEl = document.querySelector('input[name=m-order-pos]:checked');
   const orderPos = orderPosEl ? orderPosEl.value : 'last';
