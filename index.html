@@ -79,6 +79,11 @@ input[type=checkbox]{cursor:pointer;width:18px;height:18px}
 .prio-done-list summary{cursor:pointer;padding:4px 0;font-weight:700}
 .prio-done-item{padding:3px 8px;color:#94a3b8;text-decoration:line-through;display:flex;justify-content:space-between}
 .prio-done-time{font-size:10px;color:#cbd5e1}
+/* ===== 待機モードのタスク表示 ===== */
+.task-item.is-waiting-standby{border-style:dashed;border-color:#94a3b8;background:#f8fafc;opacity:.85}
+.task-item.is-waiting-active{border:2.5px solid #dc2626;background:#fef2f2;animation:prio-pulse 1.4s infinite}
+.badge-waiting-standby{display:inline-block;font-size:10px;font-weight:800;color:#64748b;background:#e2e8f0;padding:2px 7px;border-radius:5px;letter-spacing:.3px}
+.badge-waiting-active{display:inline-block;font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:3px 10px;border-radius:6px;letter-spacing:.5px}
 .hour-row{display:grid;grid-template-columns:64px 1fr;border-bottom:2px solid #cbd5e1;min-height:64px;position:relative;transition:background .15s}
 .hour-row:hover{background:#fafbfc}
 .hour-row.business{background:#fcfdff}
@@ -1817,7 +1822,6 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 
   <div id="content">
     <div id="timeline-view">
-      <div id="priority-panel"></div>
       <div class="timeline" id="timeline"></div>
     </div>
     <div id="focus-view" style="display:none"></div>
@@ -2692,6 +2696,13 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
       </div>
     </div>
     <div class="form-group">
+      <label>🕐 待機モード <span style="color:var(--gray);font-weight:400">(任意)</span></label>
+      <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
+        納品など、開始時刻が読めないタスク向け。設定すると、タイムラインで <strong>「待機中」</strong> のグレー表示になり、<strong>「▶ 発動」</strong> ボタンが付きます。届いた／始まった時に押すと、赤い枠で「今すぐやる」状態になります。
+      </div>
+      <label class="zone-chip"><input type="checkbox" id="m-waiting"><span>🕐 待機モードで作成（発動を待つ）</span></label>
+    </div>
+    <div class="form-group">
       <label>↪ 繰り越しペナルティ <span style="color:var(--gray);font-weight:400">(任意)</span></label>
       <div style="font-size:11px;color:var(--gray);margin-bottom:6px;line-height:1.5">
         繰り越し<strong>X回ごと</strong>に <strong>Yポイント</strong> 減点します。両方の値を入力すると有効になります。<br>
@@ -2731,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '549d935'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -3012,6 +3023,7 @@ function instantiateRecurringTask(rt, dKey){
     allowCarry: rt.allowCarry !== false,
     allowRetire: rt.allowRetire !== false,
     allowSkip: rt.allowSkip !== false,
+    waiting: !!rt.waiting,
     done: false,
     carryOvers: [],
     order: nextOrderInHour(dKey, rt.hour ?? 0),
@@ -3248,6 +3260,7 @@ function openAddModal(hour, dateOverride){
   document.getElementById('m-allow-carry').checked = true;
   document.getElementById('m-allow-retire').checked = true;
   document.getElementById('m-allow-skip').checked = true;
+  document.getElementById('m-waiting').checked = false;
   document.getElementById('m-manual').value = '';
   editingChecklist = [];
   renderChecklistEditor();
@@ -3298,6 +3311,7 @@ function openEditModal(taskId){
   document.getElementById('m-allow-carry').checked = (t.allowCarry !== false);
   document.getElementById('m-allow-retire').checked = (t.allowRetire !== false);
   document.getElementById('m-allow-skip').checked = (t.allowSkip !== false);
+  document.getElementById('m-waiting').checked = !!t.waiting;
   document.getElementById('m-manual').value = t.manual || '';
   editingChecklist = (Array.isArray(t.checklist) ? t.checklist : []).map(it => ({
     id: it.id || ('cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6)),
@@ -3340,6 +3354,7 @@ function saveTask(){
   const allowCarry  = document.getElementById('m-allow-carry').checked;
   const allowRetire = document.getElementById('m-allow-retire').checked;
   const allowSkip   = document.getElementById('m-allow-skip').checked;
+  const waiting     = document.getElementById('m-waiting').checked;
   const memo = document.getElementById('m-memo').value.trim();
   const manual = document.getElementById('m-manual').value.trim();
   const timerMinRaw = document.getElementById('m-timer-min').value;
@@ -3392,6 +3407,7 @@ function saveTask(){
     points,
     carryPenaltyEvery, carryPenaltyAmount,
     allowCarry, allowRetire, allowSkip,
+    waiting,
     checklist
   };
   // ヘルパー: 各タスク/テンプレートに独立したチェックリストコピーを渡す（参照共有を防ぐ）
@@ -4765,7 +4781,24 @@ document.getElementById('complete-modal').addEventListener('click', e => {
 });
 
 /* ========== 描画 ========== */
-/* ========== 優先タスク（待機・発動・順番管理） ========== */
+/* 待機モードの状態切替（standby ↔ active） */
+function setTaskWaitingState(taskId, newState, ev){
+  if(ev){ ev.stopPropagation(); ev.preventDefault(); }
+  const found = findTaskByIdAnyDate(taskId);
+  if(!found) return;
+  const t = found.task;
+  if(newState === 'active'){
+    t.waitingActive = true;
+    t.waitingActivatedAt = new Date().toISOString();
+  } else {
+    t.waitingActive = false;
+    delete t.waitingActivatedAt;
+  }
+  saveState();
+  refreshCurrentView();
+}
+
+/* ========== 優先タスク（待機・発動・順番管理）—  v4.2 まで使用、v4.3 で廃止 ========== */
 function renderPriorityPanel(){
   const panel = document.getElementById('priority-panel');
   if(!panel) return;
@@ -4891,8 +4924,6 @@ function movePriorityTask(id, dir){
 }
 
 function render(){
-  // 優先タスク描画
-  try{ renderPriorityPanel(); }catch(e){ console.warn('priority render failed', e); }
   // 日付ナビ
   document.getElementById('date-picker').value = dateKey(currentDate);
   const y = currentDate.getFullYear();
@@ -5036,6 +5067,10 @@ function renderTask(t, ctx){
   if(ctx.isNext) cls.push('next-up');
   if(ctx.isQueued) cls.push('queued');
   if(!t.done && !t.startedAt) cls.push('not-started');
+  // 待機モード（待機中 or 発動中）の見た目クラス
+  if(t.waiting && !t.done && !t.retired && !t.skipped){
+    if(t.waitingActive) cls.push('is-waiting-active'); else cls.push('is-waiting-standby');
+  }
   // 予定時刻を超過している未処理タスクを警告表示（表示中の日が今日のときのみ）
   let isOverdue = false;
   if(!t.done && !t.retired && !t.skipped && carryOvers.length === 0 && t.hour != null){
@@ -5109,6 +5144,18 @@ function renderTask(t, ctx){
   const skipBtn = canSkip
     ? `<button class="task-icon-btn skip" onclick="openSkipModal('${t.id}', event)" title="人員不足など、そもそも実施できない場合（減点なし）">⏭ スキップ</button>`
     : '';
+  // 待機モード：発動ボタン or 待機に戻すボタン
+  let waitingBtn = '';
+  let waitingBadge = '';
+  if(t.waiting && !t.done && !t.retired && !t.skipped){
+    if(t.waitingActive){
+      waitingBtn = `<button class="task-icon-btn" style="background:#fff;color:#dc2626;border:1.5px solid #dc2626;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'standby', event)" title="待機状態に戻す">↩ 待機に戻す</button>`;
+      waitingBadge = `<span class="badge-waiting-active">🔥 最優先・今すぐ</span>`;
+    } else {
+      waitingBtn = `<button class="task-icon-btn" style="background:#dc2626;color:#fff;font-weight:800" onclick="setTaskWaitingState('${t.id}', 'active', event)" title="届いた／始まった時に押す">▶ 発動</button>`;
+      waitingBadge = `<span class="badge-waiting-standby">🕐 待機中</span>`;
+    }
+  }
   const skippedBadge = t.skipped
     ? `<span class="skipped-badge" title="${escapeHtml(t.skippedReason||'')}">⏭ ${escapeHtml(t.skippedBy||'?')}が不在スキップ</span>`
     : '';
@@ -5208,7 +5255,7 @@ function renderTask(t, ctx){
   if(infoTextHtml) metaPieces.push(infoTextHtml);
   if(pointsBadge) metaPieces.push(pointsBadge);
   const metaLeft = metaPieces.join('<span class="meta-sep">・</span>');
-  const metaRight = [overdueBadge, mustDoBadge, checklistBadge, manualBadge, doneByBadge, retiredBadge, skippedBadge, carryBtn, retireBtn, skipBtn, upBtn, downBtn].filter(x => x).join('');
+  const metaRight = [overdueBadge, mustDoBadge, waitingBadge, checklistBadge, manualBadge, doneByBadge, retiredBadge, skippedBadge, waitingBtn, carryBtn, retireBtn, skipBtn, upBtn, downBtn].filter(x => x).join('');
   const metaRowHtml = (metaLeft || metaRight)
     ? `<div class="task-meta-row">${metaLeft}${metaRight ? `<span style="flex:1"></span>${metaRight}` : ''}</div>`
     : '';
