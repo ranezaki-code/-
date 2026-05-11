@@ -1099,13 +1099,17 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 /* チェックリストモーダル */
 .checklist-warning{background:#fff3e0;border-left:3px solid var(--orange);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#e65100;line-height:1.6}
 .checklist-warning.success{background:var(--green-lt);border-left-color:var(--green);color:#1b5e20}
-.checklist-list{display:flex;flex-direction:column;gap:6px}
-.checklist-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#fff;border:2px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:14px}
+.checklist-list{display:flex;flex-direction:column;gap:8px}
+.checklist-item{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:#fff;border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s}
 .checklist-item:hover{border-color:var(--accent);background:var(--accent-lt)}
-.checklist-item input[type=checkbox]{width:20px;height:20px;flex-shrink:0;margin-top:1px;cursor:pointer}
 .checklist-item.done{background:var(--green-lt);border-color:var(--green)}
-.checklist-item.done span{text-decoration:line-through;color:var(--gray)}
-.checklist-item span{line-height:1.5;word-break:break-word}
+.checklist-item.done .cli-view-std{text-decoration:line-through;color:var(--gray)}
+.cli-view-where{font-size:11px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px;align-self:flex-start;letter-spacing:.3px}
+.cli-view-main{display:flex;align-items:flex-start;gap:12px}
+.cli-view-main input[type=checkbox]{width:22px;height:22px;flex-shrink:0;margin-top:2px;cursor:pointer;accent-color:var(--green)}
+.cli-view-std{font-size:15px;font-weight:700;color:#0f172a;line-height:1.45;word-break:break-word;flex:1}
+.cli-view-action{display:flex;align-items:flex-start;gap:6px;margin-left:34px;font-size:12px;color:#475569;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:3px solid #94a3b8;line-height:1.5;word-break:break-word}
+.cli-view-action-tag{display:inline-block;font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;padding:1px 6px;border-radius:4px;flex-shrink:0;letter-spacing:.5px}
 
 /* プリセットカード */
 .preset-card{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;margin-bottom:8px;font-size:13px}
@@ -1115,7 +1119,7 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .preset-card .preset-actions button{padding:5px 10px;font-size:11px}
 
 /* 編集モーダル：チェックリスト編集 */
-.checklist-edit-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.checklist-edit-list{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
 .checklist-edit-item{display:flex;gap:6px;align-items:center}
 .checklist-edit-item input[type=text]{flex:1}
 .checklist-edit-item .num{font-size:11px;color:var(--gray);width:24px;text-align:right;flex-shrink:0}
@@ -1124,6 +1128,25 @@ details.date-direct-toggle[open] summary::before{content:'▾ '}
 .checklist-edit-item button.mv{background:transparent;color:var(--gray);padding:2px 6px;font-size:11px;border-radius:4px;flex-shrink:0}
 .checklist-edit-item button.mv:hover:not(:disabled){background:var(--accent-lt);color:var(--accent)}
 .checklist-edit-item button.mv:disabled{opacity:.3;cursor:not-allowed}
+/* 3フィールド項目カード（場所/判定基準/NG時アクション） */
+.checklist-edit-card{display:flex;gap:8px;align-items:flex-start;background:#fff;border:2px solid var(--border);border-radius:10px;padding:10px 12px}
+.checklist-edit-card .cli-num{flex-shrink:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:#e0e7ff;color:#3730a3;border-radius:50%;font-size:12px;font-weight:800}
+.checklist-edit-card .cli-fields{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.checklist-edit-card .cli-row{display:flex;gap:8px;align-items:center}
+.checklist-edit-card .cli-row input[type=text]{flex:1;min-width:0;font-size:13px}
+.checklist-edit-card .cli-tag{flex-shrink:0;width:130px;font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;letter-spacing:.3px;text-align:center}
+.checklist-edit-card .cli-tag.where{background:#e0f2fe;color:#0369a1}
+.checklist-edit-card .cli-tag.std{background:#dcfce7;color:#15803d}
+.checklist-edit-card .cli-tag.act{background:#fef3c7;color:#b45309}
+.checklist-edit-card .cli-side-btns{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.checklist-edit-card .cli-side-btns button{font-size:11px;padding:2px 6px;background:transparent;color:var(--gray);border-radius:4px}
+.checklist-edit-card .cli-side-btns button.mv:hover:not(:disabled){background:var(--accent-lt);color:var(--accent)}
+.checklist-edit-card .cli-side-btns button.mv:disabled{opacity:.3;cursor:not-allowed}
+.checklist-edit-card .cli-side-btns button.del:hover{background:var(--red-lt);color:var(--red)}
+@media (max-width:600px){
+  .checklist-edit-card .cli-row{flex-direction:column;align-items:stretch;gap:3px}
+  .checklist-edit-card .cli-tag{width:auto;align-self:flex-start}
+}
 .checklist-edit-item.is-section{margin-top:6px;padding:4px 6px;background:#eef2ff;border-radius:6px}
 .checklist-edit-item.is-section .sec-label{font-size:10px;font-weight:800;color:#4f46e5;background:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0}
 .checklist-edit-item.is-section input[type=text]{font-weight:700;color:#3730a3;background:#fff}
@@ -2671,7 +2694,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '1.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '2.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '3f9298e'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -2938,6 +2961,8 @@ function instantiateRecurringTask(rt, dKey){
         checked: false
       };
       if(c.type === 'section') o.type = 'section';
+      if(c.where) o.where = c.where;
+      if(c.action) o.action = c.action;
       return o;
     }),
     timerSeconds: rt.timerSeconds || null,
@@ -3097,11 +3122,17 @@ function renderChecklistEditor(){
       </div>`;
     }
     itemNo++;
-    return `<div class="checklist-edit-item">
-      <span class="num">${itemNo}.</span>
-      <input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：レジ点検">
-      ${moveBtns}
-      <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
+    return `<div class="checklist-edit-card">
+      <div class="cli-num">${itemNo}</div>
+      <div class="cli-fields">
+        <div class="cli-row"><span class="cli-tag where">📍 場所</span><input type="text" value="${escapeHtml(item.where || '')}" oninput="editingChecklist[${i}].where=this.value" placeholder="例：鏡・洗面台（任意）"></div>
+        <div class="cli-row"><span class="cli-tag std">✅ 判定基準</span><input type="text" value="${escapeHtml(item.text || '')}" oninput="editingChecklist[${i}].text=this.value" placeholder="例：水滴や手垢が一つもない"></div>
+        <div class="cli-row"><span class="cli-tag act">🛠 NG時アクション</span><input type="text" value="${escapeHtml(item.action || '')}" oninput="editingChecklist[${i}].action=this.value" placeholder="例：専用のクロスで円を描くように拭く（任意）"></div>
+      </div>
+      <div class="cli-side-btns">
+        ${moveBtns}
+        <button class="del" onclick="removeChecklistItemEditor(${i})" title="削除">×</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -3118,15 +3149,20 @@ function moveChecklistItemEditor(idx, dir){
 function addChecklistItemEditor(){
   editingChecklist.push({
     id: 'cl_' + Date.now() + '_' + editingChecklist.length,
+    where: '',
     text: '',
+    action: '',
     checked: false,
     type: 'item'
   });
   renderChecklistEditor();
-  // 新しい項目にフォーカス
+  // 新しい項目の判定基準フィールドにフォーカス（場所は任意なので飛ばす）
   setTimeout(() => {
-    const inputs = document.querySelectorAll('#m-checklist-items input[type=text]');
-    if(inputs.length) inputs[inputs.length - 1].focus();
+    const cards = document.querySelectorAll('#m-checklist-items .checklist-edit-card');
+    const last = cards[cards.length - 1];
+    if(!last) return;
+    const stdInput = last.querySelectorAll('input[type=text]')[1];
+    if(stdInput) stdInput.focus();
   }, 30);
 }
 
@@ -3226,7 +3262,9 @@ function openEditModal(taskId){
   document.getElementById('m-manual').value = t.manual || '';
   editingChecklist = (Array.isArray(t.checklist) ? t.checklist : []).map(it => ({
     id: it.id || ('cl_' + Date.now() + '_' + Math.random().toString(36).slice(2,6)),
+    where: it.where || '',
     text: it.text || '',
+    action: it.action || '',
     checked: !!it.checked,
     type: it.type === 'section' ? 'section' : 'item'
   }));
@@ -3273,12 +3311,14 @@ function saveTask(){
   const carryPenaltyRaw = document.getElementById('m-carry-penalty').value;
   const carryPenaltyVal = parseInt(carryPenaltyRaw, 10);
   const carryPenaltyAmount = (Number.isFinite(carryPenaltyVal) && carryPenaltyVal > 0) ? carryPenaltyVal : null;
-  // 空項目を除外しつつチェックリストを保存（区分も text があれば残す）
+  // 空項目を除外しつつチェックリストを保存（区分は text、項目は判定基準 text のみ必須）
   const checklist = editingChecklist
     .filter(i => (i.text || '').trim().length > 0)
     .map(i => {
       const o = {id: i.id, text: i.text.trim(), checked: !!i.checked};
       if(i.type === 'section') o.type = 'section';
+      if(i.where && i.where.trim()) o.where = i.where.trim();
+      if(i.action && i.action.trim()) o.action = i.action.trim();
       return o;
     });
 
@@ -4535,9 +4575,15 @@ function renderChecklistView(){
       if(item.type === 'section'){
         return `<div class="checklist-section-header">${escapeHtml(item.text || '')}</div>`;
       }
+      const whereHtml = item.where ? `<div class="cli-view-where">📍 ${escapeHtml(item.where)}</div>` : '';
+      const actionHtml = item.action ? `<div class="cli-view-action"><span class="cli-view-action-tag">NG時</span> ${escapeHtml(item.action)}</div>` : '';
       return `<label class="checklist-item ${item.checked ? 'done' : ''}">
-        <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleChecklistItem(${i})">
-        <span>${escapeHtml(item.text)}</span>
+        ${whereHtml}
+        <div class="cli-view-main">
+          <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleChecklistItem(${i})">
+          <span class="cli-view-std">${escapeHtml(item.text)}</span>
+        </div>
+        ${actionHtml}
       </label>`;
     }).join('');
   }
