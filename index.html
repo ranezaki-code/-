@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.7'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'b404041'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -3662,11 +3662,15 @@ function startTask(taskId, ev){
 function checkOrderRestriction(t, dateKey){
   const tasks = state.tasks[dateKey] || [];
   const isCarry = Array.isArray(t.carryOvers) && t.carryOvers.length > 0;
+  // 待機モードのタスク自身は順番チェーンから外れる（いつ来るかわからないので時間軸に縛らない）
+  if(t.waiting && !t.waitingActive) return {ok: true};
   const laneOf = (x_) => {
     if(x_.tan === 'counter') return 'counter';
     if(x_.tan === 'back') return 'back';
     return 'both';
   };
+  // 待機タスクは「他タスクのブロッカー」にもならない（時間に縛られない存在）
+  const isBlocker = (x) => !x.done && !x.retired && !x.skipped && !(x.waiting && !x.waitingActive);
   // 1) 同じレーン（時間帯 + 担当 or 繰り越しゾーン）のタスクをフィルタ
   const sameLane = tasks.filter(x => {
     if(x.hour !== t.hour) return false;
@@ -3676,7 +3680,7 @@ function checkOrderRestriction(t, dateKey){
     return laneOf(x) === laneOf(t);
   });
   const sorted = sameLane.slice().sort((a,b) => (a.order ?? 999) - (b.order ?? 999) || (a.createdAt||'').localeCompare(b.createdAt||''));
-  const firstUndone = sorted.find(x => !x.done && !x.retired && !x.skipped);
+  const firstUndone = sorted.find(isBlocker);
   if(firstUndone && firstUndone.id !== t.id){
     return {ok: false, blockingTask: firstUndone.text || '上のタスク', reason:'order'};
   }
@@ -3687,7 +3691,7 @@ function checkOrderRestriction(t, dateKey){
       if(x.hour == null || x.hour >= (t.hour ?? 0)) return false;
       const xCarry = Array.isArray(x.carryOvers) && x.carryOvers.length > 0;
       if(xCarry) return false; // 繰り越しゾーンに移った分は対象外
-      if(x.done || x.retired || x.skipped) return false;
+      if(!isBlocker(x)) return false;
       const xLane = laneOf(x);
       // 「両方」レーンは全レーンを縛る
       if(xLane !== 'both' && myLane !== 'both' && xLane !== myLane) return false;
