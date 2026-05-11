@@ -1997,6 +1997,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button class="btn-primary" onclick="exportDataToFile()" style="background:#16a34a">💾 データをファイルに保存（手動バックアップ）</button>
           <button class="btn-secondary" onclick="importDataFromFile()" style="background:#dbeafe;color:#1e40af;border-color:#93c5fd">📂 ファイルから復元</button>
+          <button class="btn-secondary" onclick="idbRestoreLatest()" style="background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe">🗄 IndexedDB から復元</button>
           <button class="btn-secondary" onclick="forcePullFromGist()" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700">🆘 Gistから強制取得</button>
           <button class="btn-secondary" onclick="openRecoveryCenter()" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">🔍 データ復旧センター</button>
           <button class="btn-secondary" onclick="restoreLastAutobackup()">⏪ 直前の自動バックアップから復元</button>
@@ -2690,7 +2691,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '2.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.0'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '2032209'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10409,13 +10410,102 @@ async function forcePullFromGist(){
   }
 }
 
-/* 直近の自動バックアップから復元 */
+/* 直近の自動バックアップから復元（autobackup_, snap_, emergency_ を全部対象） */
 function restoreLastAutobackup(){
-  const keys = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_autobackup_')).sort();
+  const keys = Object.keys(localStorage).filter(k =>
+    k.startsWith('ws_v1_autobackup_') ||
+    k.startsWith('ws_v1_snap_') ||
+    k.startsWith('ws_v1_emergency_') ||
+    k.startsWith('ws_v1_backup_')
+  );
   if(keys.length === 0){ alert('バックアップが見つかりません'); return; }
-  const latest = keys[keys.length - 1];
-  if(!confirm(`最新の自動バックアップ（${new Date(parseInt(latest.split('_').pop())).toLocaleString('ja-JP')}）から復元しますか？\n現在のデータは上書きされます。`)) return;
-  localStorage.setItem(STORAGE_KEY, localStorage.getItem(latest));
+  // タイムスタンプ降順
+  const withTs = keys.map(k => ({key: k, ts: parseInt(k.split('_').pop()) || 0}));
+  withTs.sort((a, b) => b.ts - a.ts);
+  const latest = withTs[0];
+  if(!confirm(`最新の自動バックアップ（${new Date(latest.ts).toLocaleString('ja-JP')}）から復元しますか？\n現在のデータは上書きされます。\nキー: ${latest.key}`)) return;
+  // 万一のため、現状を退避
+  try{ localStorage.setItem('ws_v1_emergency_' + Date.now(), localStorage.getItem(STORAGE_KEY) || ''); }catch(_){}
+  localStorage.setItem(STORAGE_KEY, localStorage.getItem(latest.key));
+  alert('復元しました。再読み込みします。');
+  location.reload();
+}
+
+/* ========== IndexedDB 二重保存（localStorage が消えても残る別ストレージ） ========== */
+const IDB_DB = 'ws_backup_db';
+const IDB_STORE = 'snapshots';
+let _idbReady = null;
+function _idbOpen(){
+  if(_idbReady) return _idbReady;
+  _idbReady = new Promise((resolve) => {
+    try{
+      const req = indexedDB.open(IDB_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if(!db.objectStoreNames.contains(IDB_STORE)){
+          db.createObjectStore(IDB_STORE, {keyPath: 'key'});
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    }catch(_){ resolve(null); }
+  });
+  return _idbReady;
+}
+async function idbSaveSnapshot(content){
+  try{
+    const db = await _idbOpen();
+    if(!db) return false;
+    const key = 'snap_' + Date.now();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.put({key, content, at: new Date().toISOString()});
+      tx.oncomplete = res; tx.onerror = rej;
+    });
+    // 最新30件を残す
+    const all = await idbListSnapshots();
+    if(all.length > 30){
+      const toDelete = all.slice(0, all.length - 30);
+      for(const s of toDelete){
+        await new Promise((res) => {
+          const tx = db.transaction(IDB_STORE, 'readwrite');
+          tx.objectStore(IDB_STORE).delete(s.key);
+          tx.oncomplete = res;
+        });
+      }
+    }
+    return true;
+  }catch(_){ return false; }
+}
+async function idbListSnapshots(){
+  try{
+    const db = await _idbOpen();
+    if(!db) return [];
+    return await new Promise((res) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => res((req.result || []).sort((a,b) => a.key.localeCompare(b.key)));
+      req.onerror = () => res([]);
+    });
+  }catch(_){ return []; }
+}
+async function idbRestoreLatest(){
+  const all = await idbListSnapshots();
+  if(all.length === 0){ alert('IndexedDB にバックアップがありません'); return; }
+  const latest = all[all.length - 1];
+  const at = latest.at ? new Date(latest.at).toLocaleString('ja-JP') : '不明';
+  // 内容のサマリー
+  let summary = '?';
+  try{
+    const d = JSON.parse(latest.content);
+    const totalTasks = Object.values(d.tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    summary = `タスク${totalTasks}件・スタッフ${(d.staff||[]).length}名`;
+  }catch(_){}
+  if(!confirm(`IndexedDB の最新バックアップから復元します。\n\n保存時刻: ${at}\n内容: ${summary}\n\nよろしいですか？`)) return;
+  try{ localStorage.setItem('ws_v1_emergency_' + Date.now(), localStorage.getItem(STORAGE_KEY) || ''); }catch(_){}
+  localStorage.setItem(STORAGE_KEY, latest.content);
   alert('復元しました。再読み込みします。');
   location.reload();
 }
@@ -10974,16 +11064,19 @@ saveState = function(){
   }
   _origSaveState();
   gistSyncDebouncedPush();
-  // 自動スナップショット：1分間隔で記録（最新20件）
+  // 自動スナップショット：1分間隔で記録（localStorage 20件 + IndexedDB 30件）
   try{
     const now = Date.now();
     const cur = localStorage.getItem(STORAGE_KEY);
     if(cur && now - _lastSnapshotAt > 60 * 1000){
       const totalTasks = Object.values(state.tasks || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
       if(totalTasks > 0 || (state.staff || []).length > 0){
+        // localStorage に保存
         localStorage.setItem('ws_v1_snap_' + now, cur);
         const snaps = Object.keys(localStorage).filter(k => k.startsWith('ws_v1_snap_')).sort();
         while(snaps.length > 20){ localStorage.removeItem(snaps.shift()); }
+        // IndexedDB にも保存（localStorage が消えても残る）
+        idbSaveSnapshot(cur).catch(_=>{});
         _lastSnapshotAt = now;
       }
     }
