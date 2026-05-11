@@ -2692,7 +2692,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'f4e55f9'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10908,8 +10908,7 @@ async function gistPush(){
   gistPushing = true;
   try{
     const content = gistPayloadContent();
-    // 安全装置：ローカルが「ほぼ空」なのにリモートが「大きい」場合は push を拒否
-    // （誤削除や別端末のスタール状態が cloud のデータを消すのを防ぐ）
+    // 安全装置1：ローカルが「ほぼ空」なのにリモートが「大きい」場合は push を拒否
     const localSize = content.length;
     const remoteSize = (gistLastRemoteContent || '').length;
     const localHasData = (Object.keys(state.tasks || {}).length > 0) || (state.staff || []).length > 0 || (state.recurringTasks || []).length > 0;
@@ -10917,7 +10916,39 @@ async function gistPush(){
       console.warn('gist push aborted: local is empty but remote has data (', remoteSize, 'bytes)');
       const detail = document.getElementById('sync-status-detail');
       if(detail) detail.innerHTML = '<span style="color:var(--orange)">⚠ ローカルが空のため push を中止しました（クラウドのデータ保護）</span>';
+      logOp('PUSH_ABORTED_LOCAL_EMPTY', {remoteSize});
       return;
+    }
+    // 安全装置2：他端末が先に push していないか確認（プリフライト）
+    if(gistLastRemoteContent){
+      try{
+        const r = await gistApi('GET', '/gists/' + id);
+        const f = r.files && r.files[GIST_FILENAME_WS];
+        const remoteNow = f && f.content;
+        if(remoteNow && remoteNow !== gistLastRemoteContent){
+          // 別端末からの更新あり
+          let remoteState = null;
+          try{ remoteState = JSON.parse(remoteNow); }catch(_){}
+          const localAt = state && state._modifiedAt;
+          const remoteAt = remoteState && remoteState._modifiedAt;
+          logOp('PUSH_PREFLIGHT_CONFLICT', {localAt, remoteAt, localSize: content.length, remoteSize: remoteNow.length});
+          if(localAt && remoteAt && new Date(remoteAt).getTime() > new Date(localAt).getTime()){
+            // リモートが新しい → 自分の push は古い → 止める
+            console.warn('gist push aborted: remote is newer');
+            const detail = document.getElementById('sync-status-detail');
+            if(detail) detail.innerHTML = '<span style="color:var(--orange)">⚠ 別端末の更新があるため push を中止</span>';
+            // 警告バナー
+            if(typeof _showSyncAlertBanner === 'function'){
+              _showSyncAlertBanner('⚠ 別端末で先に更新されています。ページ更新で最新を取り込んでください。タップで閉じる', '#f59e0b');
+            }
+            logOp('PUSH_ABORTED_REMOTE_NEWER', {localAt, remoteAt});
+            return;
+          }
+          // 自分の方が新しい → 進む（が、リモート差分があったことは記録）
+        }
+      }catch(e){
+        console.warn('preflight check failed (continuing push)', e);
+      }
     }
     const payload = { files: { [GIST_FILENAME_WS]: { content } } };
     await gistApi('PATCH', '/gists/' + id, payload);
