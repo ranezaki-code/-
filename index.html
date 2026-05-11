@@ -2742,7 +2742,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.8'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.9'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '1060644'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -4785,7 +4785,9 @@ document.getElementById('complete-modal').addEventListener('click', e => {
 });
 
 /* ========== 描画 ========== */
-/* 待機モードの状態切替（standby → active で同時に開始、active → standby で開始も取消） */
+/* 待機モードの状態切替（standby → active で同時に開始、active → standby で開始も取消）
+   着手時、現在時刻の時間枠にタスクを自動移動（時間軸の順番チェーンに自然に組み込まれる）。
+   取消時、元の予定時間枠に戻す。 */
 function setTaskWaitingState(taskId, newState, ev){
   if(ev){ ev.stopPropagation(); ev.preventDefault(); }
   const found = findTaskByIdAnyDate(taskId);
@@ -4793,14 +4795,34 @@ function setTaskWaitingState(taskId, newState, ev){
   const t = found.task;
   if(newState === 'active'){
     t.waitingActive = true;
-    t.waitingActivatedAt = new Date().toISOString();
-    // 同時にタスクを「開始」状態へ（startedAt をセット）
+    const now = new Date();
+    t.waitingActivatedAt = now.toISOString();
     if(!t.startedAt) t.startedAt = t.waitingActivatedAt;
+    // 元の予定時間を保存して、現在時刻の枠に移動
+    if(t.originalHour == null){
+      t.originalHour = t.hour;
+      t.originalMin = t.min ?? 0;
+    }
+    t.hour = now.getHours();
+    t.min = 0;
+    // 新しい時間枠の末尾に並び替え
+    try{
+      const dKey = found.dateKey;
+      if(typeof nextOrderInHour === 'function' && dKey){
+        t.order = nextOrderInHour(dKey, t.hour);
+      }
+    }catch(_){}
   } else {
     t.waitingActive = false;
     delete t.waitingActivatedAt;
-    // 開始時刻も取り消す（着手をやっぱり取り消す動作）
     delete t.startedAt;
+    // 元の予定時刻に戻す
+    if(t.originalHour != null){
+      t.hour = t.originalHour;
+      t.min = t.originalMin ?? 0;
+      delete t.originalHour;
+      delete t.originalMin;
+    }
   }
   saveState();
   refreshCurrentView();
