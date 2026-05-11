@@ -54,6 +54,31 @@ input[type=checkbox]{cursor:pointer;width:18px;height:18px}
 
 /* タイムライン */
 .timeline{background:#fff;margin:0;border-top:1px solid var(--border)}
+/* ===== 優先タスクパネル ===== */
+#priority-panel{margin:0 0 12px 0}
+.prio-section{background:#fff;border:1.5px solid #c7d2fe;border-radius:10px;padding:10px 12px}
+.prio-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.prio-section-title{font-size:13px;font-weight:800;color:#4338ca}
+.prio-empty{font-size:12px;color:#94a3b8;font-style:italic;padding:6px 0}
+.prio-list{display:flex;flex-direction:column;gap:6px}
+.prio-card{padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:#fff}
+.prio-card .prio-actions{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.prio-card .prio-actions button{font-size:11px;padding:4px 10px}
+.prio-card.pending{border-color:#c7d2fe}
+.prio-card.pending .prio-head{display:flex;align-items:center;gap:8px}
+.prio-card.pending .prio-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#e0e7ff;color:#4338ca;border-radius:50%;font-weight:800;font-size:12px}
+.prio-card.pending .prio-text-inline{font-size:13px;font-weight:700;color:#1f2937}
+.prio-card.standby{border-style:dashed;border-color:#94a3b8;background:#f8fafc}
+.prio-card.standby .prio-text{font-size:13px;color:#475569;font-weight:600}
+.prio-tag-standby{display:inline-block;font-size:10px;font-weight:800;color:#64748b;background:#e2e8f0;padding:1px 6px;border-radius:4px;margin-left:4px;letter-spacing:.3px}
+.prio-card.active{border-color:#dc2626;border-width:2.5px;background:#fef2f2;animation:prio-pulse 1.4s infinite}
+@keyframes prio-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.4)}50%{box-shadow:0 0 0 8px rgba(220,38,38,0)}}
+.prio-card.active .prio-text{font-size:16px;font-weight:800;color:#7f1d1d;margin-top:4px}
+.prio-tag-active{display:inline-block;font-size:11px;font-weight:800;color:#fff;background:#dc2626;padding:3px 10px;border-radius:6px;letter-spacing:.5px}
+.prio-done-list{margin-top:8px;font-size:12px;color:var(--gray)}
+.prio-done-list summary{cursor:pointer;padding:4px 0;font-weight:700}
+.prio-done-item{padding:3px 8px;color:#94a3b8;text-decoration:line-through;display:flex;justify-content:space-between}
+.prio-done-time{font-size:10px;color:#cbd5e1}
 .hour-row{display:grid;grid-template-columns:64px 1fr;border-bottom:2px solid #cbd5e1;min-height:64px;position:relative;transition:background .15s}
 .hour-row:hover{background:#fafbfc}
 .hour-row.business{background:#fcfdff}
@@ -1792,6 +1817,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 
   <div id="content">
     <div id="timeline-view">
+      <div id="priority-panel"></div>
       <div class="timeline" id="timeline"></div>
     </div>
     <div id="focus-view" style="display:none"></div>
@@ -2705,7 +2731,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '4.1'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '4.2'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '7b2c13c'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -2738,6 +2764,7 @@ function loadState(){
       if(!Array.isArray(s.requestTasks)) s.requestTasks = [];
       if(!s.breakSettings) s.breakSettings = {suggestedMinutes: 15, warnIfNextTaskWithinMinutes: 15};
       if(!Array.isArray(s.breakLogs)) s.breakLogs = [];
+      if(!Array.isArray(s.priorityTasks)) s.priorityTasks = [];
       return s;
     }
   }catch(e){}
@@ -2754,7 +2781,8 @@ function loadState(){
     requestTasks: [],
     breakSettings: {suggestedMinutes: 15, warnIfNextTaskWithinMinutes: 15},
     breakLogs: [],
-    activeBreak: null
+    activeBreak: null,
+    priorityTasks: []
   };
 }
 function saveState(){
@@ -4737,7 +4765,134 @@ document.getElementById('complete-modal').addEventListener('click', e => {
 });
 
 /* ========== 描画 ========== */
+/* ========== 優先タスク（待機・発動・順番管理） ========== */
+function renderPriorityPanel(){
+  const panel = document.getElementById('priority-panel');
+  if(!panel) return;
+  if(!Array.isArray(state.priorityTasks)) state.priorityTasks = [];
+  // 完了済みは下に、それ以外は order 順
+  const pending = state.priorityTasks.filter(p => p.state !== 'done').sort((a,b) => (a.state==='active'?-1:1)-(b.state==='active'?-1:1) || (a.order||0)-(b.order||0));
+  const completed = state.priorityTasks.filter(p => p.state === 'done').sort((a,b) => (b.doneAt||'').localeCompare(a.doneAt||''));
+  const renderCard = (p, idx, total) => {
+    if(p.state === 'active'){
+      return `<div class="prio-card active">
+        <div class="prio-head"><span class="prio-tag-active">🔥 最優先・今すぐ</span></div>
+        <div class="prio-text">${escapeHtml(p.text || '')}</div>
+        <div class="prio-actions">
+          <button class="btn-primary" onclick="completePriorityTask('${p.id}')">✓ 完了</button>
+          <button class="btn-secondary" onclick="standbyPriorityTask('${p.id}')">↩ 待機に戻す</button>
+        </div>
+      </div>`;
+    }
+    if(p.state === 'standby'){
+      return `<div class="prio-card standby">
+        <div class="prio-text">🚚 ${escapeHtml(p.text || '')} <span class="prio-tag-standby">待機中</span></div>
+        <div class="prio-actions">
+          <button class="btn-primary" style="background:#dc2626" onclick="activatePriorityTask('${p.id}')">▶ 発動（最優先化）</button>
+          <button class="btn-secondary" onclick="deletePriorityTask('${p.id}')">🗑</button>
+        </div>
+      </div>`;
+    }
+    // pending（通常順番タスク）
+    return `<div class="prio-card pending">
+      <div class="prio-head">
+        <span class="prio-num">${idx + 1}</span>
+        <span class="prio-text-inline">${escapeHtml(p.text || '')}</span>
+      </div>
+      <div class="prio-actions">
+        <button class="btn-primary" onclick="completePriorityTask('${p.id}')">✓ 完了</button>
+        <button class="btn-secondary" onclick="movePriorityTask('${p.id}', -1)" ${idx===0?'disabled':''}>▲</button>
+        <button class="btn-secondary" onclick="movePriorityTask('${p.id}', 1)" ${idx>=total-1?'disabled':''}>▼</button>
+        <button class="btn-secondary" onclick="deletePriorityTask('${p.id}')">🗑</button>
+      </div>
+    </div>`;
+  };
+  const pendingHtml = pending.map((p,i) => renderCard(p, i, pending.length)).join('');
+  const completedHtml = completed.length > 0
+    ? `<details class="prio-done-list"><summary>✓ 完了済み (${completed.length})</summary>${completed.map(p => `<div class="prio-done-item">✓ ${escapeHtml(p.text || '')} <span class="prio-done-time">${p.doneAt ? new Date(p.doneAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}) : ''}</span></div>`).join('')}</details>`
+    : '';
+  panel.innerHTML = `
+    <div class="prio-section">
+      <div class="prio-section-head">
+        <span class="prio-section-title">🎯 優先タスク（順番・待機）</span>
+        <button class="btn-primary" onclick="addPriorityTaskPrompt()" style="font-size:12px;padding:4px 10px">＋ 追加</button>
+      </div>
+      ${pending.length === 0 ? '<div class="prio-empty">優先タスク無し（必要なら ＋追加 で順番タスクや待機タスクを登録）</div>' : `<div class="prio-list">${pendingHtml}</div>`}
+      ${completedHtml}
+    </div>`;
+}
+function addPriorityTaskPrompt(){
+  const text = prompt('優先タスクの内容を入力（例：開店前点検 / 納品受領 / 棚卸準備）');
+  if(!text || !text.trim()) return;
+  const mode = confirm('このタスクは「待機タイプ」ですか？\n\n[OK] 待機タイプ（届いたら／来たら発動する。例：納品・配送）\n[キャンセル] 通常の順番タスク');
+  const maxOrder = (state.priorityTasks || []).reduce((m, p) => Math.max(m, p.order || 0), 0);
+  const task = {
+    id: 'pt_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+    text: text.trim(),
+    state: mode ? 'standby' : 'pending',
+    order: maxOrder + 1,
+    createdAt: new Date().toISOString(),
+    _at: new Date().toISOString()
+  };
+  if(!Array.isArray(state.priorityTasks)) state.priorityTasks = [];
+  state.priorityTasks.push(task);
+  saveState();
+  renderPriorityPanel();
+}
+function activatePriorityTask(id){
+  const p = (state.priorityTasks || []).find(x => x.id === id);
+  if(!p) return;
+  // 既に active なものがあれば、それを pending に戻す
+  state.priorityTasks.forEach(x => { if(x.state === 'active') x.state = 'pending'; });
+  p.state = 'active';
+  p.activatedAt = new Date().toISOString();
+  p._at = p.activatedAt;
+  saveState();
+  renderPriorityPanel();
+}
+function standbyPriorityTask(id){
+  const p = (state.priorityTasks || []).find(x => x.id === id);
+  if(!p) return;
+  p.state = 'standby';
+  p._at = new Date().toISOString();
+  saveState();
+  renderPriorityPanel();
+}
+function completePriorityTask(id){
+  const p = (state.priorityTasks || []).find(x => x.id === id);
+  if(!p) return;
+  p.state = 'done';
+  p.doneAt = new Date().toISOString();
+  p._at = p.doneAt;
+  saveState();
+  renderPriorityPanel();
+}
+function deletePriorityTask(id){
+  if(!confirm('この優先タスクを削除しますか？')) return;
+  state.priorityTasks = (state.priorityTasks || []).filter(x => x.id !== id);
+  saveState();
+  renderPriorityPanel();
+}
+function movePriorityTask(id, dir){
+  const list = (state.priorityTasks || []).filter(p => p.state !== 'done' && p.state !== 'active').sort((a,b) => (a.order||0)-(b.order||0));
+  const i = list.findIndex(p => p.id === id);
+  if(i < 0) return;
+  const j = i + dir;
+  if(j < 0 || j >= list.length) return;
+  // order の入れ替え
+  const a = list[i], b = list[j];
+  const tmpOrder = a.order;
+  a.order = b.order;
+  b.order = tmpOrder;
+  a._at = new Date().toISOString();
+  b._at = new Date().toISOString();
+  saveState();
+  renderPriorityPanel();
+}
+
 function render(){
+  // 優先タスク描画
+  try{ renderPriorityPanel(); }catch(e){ console.warn('priority render failed', e); }
   // 日付ナビ
   document.getElementById('date-picker').value = dateKey(currentDate);
   const y = currentDate.getFullYear();
