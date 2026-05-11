@@ -1736,6 +1736,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
   <div id="header">
     <h1>📋 ワークスケジュール</h1>
     <button id="admin-toggle" onclick="toggleAdminMode()" title="クリックで管理者モードに切り替え">🔒 従業員</button>
+    <button id="manual-pull-btn" onclick="forcePullFromGist()" title="クラウド（Gist）から最新を取り込む" style="background:#4f46e5;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:4px">🔄 最新を反映</button>
     <span class="sync-badge" id="sync-badge" onclick="openSyncModal()" title="クリックで同期設定">⚪ 未設定</span>
   </div>
 
@@ -2692,7 +2693,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '3.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '3.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = '3c2f37f'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -11185,19 +11186,11 @@ document.getElementById('sync-modal').addEventListener('click', e => {
 
 /* 自動Pull（ポーリング） */
 function startGistPolling(){
-  if(gistPollTimer) clearInterval(gistPollTimer);
-  gistPollTimer = setInterval(async () => {
-    const {token, id} = gistCfg();
-    if(!token || !id) return;
-    if(gistPushing || gistPushTimer) return; // ローカル変更がpush待ち中はskip
-    if(document.hidden) return;               // バックグラウンドタブはskip
-    if(document.querySelector('.modal-overlay.show')) return; // 編集中はskip
-    const changed = await gistPull(true);
-    if(changed){
-      state = loadState();
-      render();
-    }
-  }, POLL_INTERVAL_MS);
+  // v3.4 から自動 Pull を廃止。
+  // Pull は「初回ページ表示時」と「ユーザーが明示的にボタンを押した時」のみ。
+  // これで複数端末で開いていても、勝手にローカルが上書きされる事故が起きない。
+  // 参考: 旧仕様は 10 秒毎の auto-pull。
+  return;
 }
 
 /* saveState を Gist push にフック。state._modifiedAt も更新してタイムスタンプ比較に使う */
