@@ -2741,7 +2741,7 @@ body.admin-mode #view-tabs #tab-db,body.admin-mode #view-tabs #tab-list{display:
 /* ========== 状態管理 ========== */
 const STORAGE_KEY = 'ws_v1';
 const DEFAULT_CATEGORIES = ['清掃', '補充', '確認', '修正', '作成', '値引', '発注'];
-const APP_VERSION = '5.3'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
+const APP_VERSION = '5.4'; // 機能更新ごとに数字を上げる（更新が分かりやすいように）
 const APP_BUILD = 'e371b28'; // 自動更新（push時に書き換え）
 const DEFAULT_GAME_SETTINGS = {
   pointsBase: 2,
@@ -10754,8 +10754,18 @@ async function forcePullFromGist(){
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     const file = j.files && j.files['work_schedule_data.json'];
-    if(!file || !file.content) throw new Error('Gistにデータがありません');
-    localStorage.setItem(STORAGE_KEY, file.content);
+    if(!file) throw new Error('Gistにファイルが見つかりません');
+    let content = file.content;
+    // truncated（600KB 超）の場合は raw_url から完全な内容を取得
+    if(file.truncated && file.raw_url){
+      const rawRes = await fetch(file.raw_url, {cache: 'no-store'});
+      if(!rawRes.ok) throw new Error('raw_url 取得失敗: ' + rawRes.status);
+      content = await rawRes.text();
+    }
+    if(!content) throw new Error('Gistにデータがありません');
+    // 軽くパース検証（破損していたら止める）
+    try{ JSON.parse(content); }catch(e){ throw new Error('Gist 内容が壊れています: ' + e.message); }
+    localStorage.setItem(STORAGE_KEY, content);
     alert('Gistから取得しました。\nページを再読み込みします。');
     location.reload();
   }catch(e){
@@ -11373,7 +11383,14 @@ async function gistPush(){
       try{
         const r = await gistApi('GET', '/gists/' + id);
         const f = r.files && r.files[GIST_FILENAME_WS];
-        const remoteNow = f && f.content;
+        let remoteNow = f && f.content;
+        // truncated（600KB 超）の場合は raw_url から完全な内容を取得
+        if(f && f.truncated && f.raw_url){
+          try{
+            const rawRes = await fetch(f.raw_url, {cache: 'no-store'});
+            if(rawRes.ok) remoteNow = await rawRes.text();
+          }catch(_){ /* 取得失敗時は truncated content のままだが、後段のJSON.parseで弾かれる */ }
+        }
         if(remoteNow && remoteNow !== gistLastRemoteContent){
           // 別端末からの更新あり → マージ
           let remoteState = null;
@@ -11441,8 +11458,27 @@ async function gistPull(silent){
   try{
     const r = await gistApi('GET', '/gists/' + id);
     const f = r.files && r.files[GIST_FILENAME_WS];
-    if(!f || !f.content){
-      if(!silent) console.warn('gist file empty (work_schedule_data.json)');
+    if(!f){
+      if(!silent) console.warn('gist file missing (work_schedule_data.json)');
+      return false;
+    }
+    // GitHub API は content を 600KB 程度で切り詰める（truncated=true）
+    // その場合は raw_url から完全なデータを取得する
+    if(f.truncated && f.raw_url){
+      try{
+        const rawRes = await fetch(f.raw_url, {cache: 'no-store'});
+        if(rawRes.ok){
+          f.content = await rawRes.text();
+        } else {
+          throw new Error('raw_url fetch failed: ' + rawRes.status);
+        }
+      }catch(e){
+        if(!silent) console.warn('failed to fetch full content from raw_url', e);
+        return false;
+      }
+    }
+    if(!f.content){
+      if(!silent) console.warn('gist file empty');
       return false;
     }
     if(f.content === gistLastRemoteContent){
